@@ -3,3 +3,4 @@ streamlit
 ollama
 pandas
 pyyaml
+requests
