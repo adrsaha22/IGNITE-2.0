@@ -17,6 +17,8 @@ from modules.rule_quality import evaluate_rule_quality
 from modules.explanation_engine import explain_detection
 
 from modules.telemetry_engine import get_telemetry
+from modules.telemetry_rule_builder import build_telemetry_rule
+
 st.set_page_config(
     page_title="AI Detection Rule Generator",
     page_icon="🛡️",
@@ -201,128 +203,120 @@ if st.button("🛡️ Generate Detection Rules"):
         best_rule["rule"],
         language="sql"
     )
+
     # ======================================
-# AUTONOMOUS AI DETECTION ENGINE
-# ======================================
+    # AUTONOMOUS AI DETECTION ENGINE
+    # ======================================
 
-from modules.technique_mapper import map_attack_to_techniques
-from modules.autonomous_rule_generator import generate_autonomous_rule
-from modules.false_positive_reducer import reduce_false_positives
-from modules.rule_validator import validate_rule
-from modules.rule_quality import evaluate_rule_quality
-from modules.explanation_engine import explain_detection
+    st.divider()
 
-st.divider()
-
-st.subheader(
-    "🤖 Autonomous AI Detection Engine"
-)
-
-try:
-
-   techniques = map_attack_to_techniques(
-    attack_description
-)
-
-# NEW
-telemetry = get_telemetry(
-    techniques
-)
-
-# NEW
-telemetry_rule = build_telemetry_rule(
-    telemetry
-)
-
-autonomous_rule = generate_autonomous_rule(
-    techniques
-)
-telemetry = get_telemetry(
-    techniques
-)
-telemetry_rule = build_telemetry_rule(
-    telemetry
-)
-    
-
-autonomous_rule = reduce_false_positives(
-        autonomous_rule
+    st.subheader(
+        "🤖 Autonomous AI Detection Engine"
     )
 
-    validation = validate_rule(
-        autonomous_rule
-    )
+    techniques = []
+    autonomous_rule = ""
+    validation = {}
+    quality = {}
+    explanation = ""
 
-    quality = evaluate_rule_quality(
-        autonomous_rule
-    )
+    try:
 
-    explanation = explain_detection(
-        attack_description,
-        techniques,
-        autonomous_rule
-    )
-
-    col1, col2, col3, col4 = st.columns(4)
-
-    with col1:
-        st.metric(
-            "MITRE Techniques",
-            len(techniques)
+        techniques = map_attack_to_techniques(
+            attack_description
         )
 
-    with col2:
-        st.metric(
-            "Validation Score",
-            validation["score"]
+        telemetry = get_telemetry(
+            techniques
         )
 
-    with col3:
-        st.metric(
-            "Quality Score",
-            quality["quality_score"]
+        telemetry_rule = build_telemetry_rule(
+            telemetry
         )
 
-    with col4:
-        st.metric(
-            "Status",
-            "Valid"
-            if validation["valid"]
-            else "Invalid"
+        autonomous_rule = generate_autonomous_rule(
+            techniques
         )
 
-    st.write("### ATT&CK Techniques")
-    st.write(", ".join(techniques))
+        autonomous_rule = reduce_false_positives(
+            autonomous_rule
+        )
 
-    st.write("### Autonomous Detection Rule")
+        validation = validate_rule(
+            autonomous_rule
+        )
 
-    st.code(
-        autonomous_rule,
-        language="sql"
-    )
-    st.write(
-    "### Telemetry Aware Detection Rule"
-)
+        quality = evaluate_rule_quality(
+            autonomous_rule
+        )
 
-st.code(
-    telemetry_rule,
-    language="sql"
-)
-    st.write("### Validation Report")
-    st.json(validation)
+        explanation = explain_detection(
+            attack_description,
+            techniques,
+            autonomous_rule
+        )
 
-    st.write("### Quality Assessment")
-    st.json(quality)
+        col1, col2, col3, col4 = st.columns(4)
 
-    st.write("### Detection Explanation")
-    st.text(explanation)
-    
+        with col1:
+            st.metric(
+                "MITRE Techniques",
+                len(techniques)
+            )
 
-except Exception as e:
+        with col2:
+            st.metric(
+                "Validation Score",
+                validation["score"]
+            )
 
-    st.error(
-        f"Autonomous Engine Error: {str(e)}"
-    )
+        with col3:
+            st.metric(
+                "Quality Score",
+                quality["quality_score"]
+            )
+
+        with col4:
+            st.metric(
+                "Status",
+                "Valid"
+                if validation["valid"]
+                else "Invalid"
+            )
+
+        st.write("### ATT&CK Techniques")
+        st.write(", ".join(techniques))
+
+        st.write("### Autonomous Detection Rule")
+
+        st.code(
+            autonomous_rule,
+            language="sql"
+        )
+
+        st.write(
+            "### Telemetry Aware Detection Rule"
+        )
+
+        st.code(
+            telemetry_rule,
+            language="sql"
+        )
+
+        st.write("### Validation Report")
+        st.json(validation)
+
+        st.write("### Quality Assessment")
+        st.json(quality)
+
+        st.write("### Detection Explanation")
+        st.text(explanation)
+
+    except Exception as e:
+
+        st.error(
+            f"Autonomous Engine Error: {str(e)}"
+        )
 
     # ======================================
     # ALTERNATIVE RULES
@@ -404,22 +398,19 @@ except Exception as e:
             )
 
     # ======================================
-   # ======================================
-# JSON EXPORT
-# ======================================
+    # JSON EXPORT
+    # ======================================
 
-st.divider()
-
-if "result" in locals():
+    st.divider()
 
     export_data = {
         "sigma_pipeline": result,
-        "best_rule": best_rule if "best_rule" in locals() else {},
-        "techniques": techniques if "techniques" in locals() else [],
-        "autonomous_rule": autonomous_rule if "autonomous_rule" in locals() else "",
-        "validation": validation if "validation" in locals() else {},
-        "quality": quality if "quality" in locals() else {},
-        "explanation": explanation if "explanation" in locals() else ""
+        "best_rule": best_rule,
+        "techniques": techniques,
+        "autonomous_rule": autonomous_rule,
+        "validation": validation,
+        "quality": quality,
+        "explanation": explanation
     }
 
     json_data = json.dumps(
