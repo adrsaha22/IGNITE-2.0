@@ -1,0 +1,79 @@
+{
+  "T1059.001": {
+    "name": "PowerShell",
+    "logs": [
+      "Sysmon",
+      "PowerShell Operational",
+      "Windows Security"
+    ],
+    "event_ids": [
+      1,
+      4104,
+      4688
+    ],
+    "fields": [
+      "Image",
+      "CommandLine",
+      "ParentImage",
+      "User"
+    ],
+    "indicators": [
+      "powershell.exe",
+      "pwsh.exe",
+      "IEX",
+      "DownloadString",
+      "Invoke-WebRequest",
+      "Invoke-RestMethod"
+    ]
+  },
+
+  "T1105": {
+    "name": "Ingress Tool Transfer",
+    "logs": [
+      "Sysmon",
+      "Windows Security"
+    ],
+    "event_ids": [
+      1,
+      3,
+      4688
+    ],
+    "fields": [
+      "Image",
+      "CommandLine",
+      "DestinationIp",
+      "User"
+    ],
+    "indicators": [
+      "curl",
+      "wget",
+      "certutil",
+      "bitsadmin"
+    ]
+  },
+
+  "T1053.005": {
+    "name": "Scheduled Task",
+    "logs": [
+      "Task Scheduler",
+      "Sysmon",
+      "Windows Security"
+    ],
+    "event_ids": [
+      4698,
+      1
+    ],
+    "fields": [
+      "TaskName",
+      "CommandLine",
+      "User",
+      "Image"
+    ],
+    "indicators": [
+      "schtasks.exe",
+      "/create",
+      "/tn",
+      "/sc"
+    ]
+  }
+}
