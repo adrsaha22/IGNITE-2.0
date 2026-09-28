@@ -1,0 +1,306 @@
+@import 'tailwindcss';
+
+/*
+ * IGNITE 2.0 — "Obsidian Violet" design system.
+ *
+ * Semantic tokens live on :root (dark, the art-directed default) and are
+ * overridden under [data-theme='light']. Tailwind's @theme inline maps them to
+ * utilities so every component follows the active theme without per-component
+ * light/dark variants.
+ *
+ * Typography resolves from system stacks — the app never depends on a remote
+ * font service.
+ */
+
+:root {
+  /* ---- Layered surfaces: deep violet-black rising to elevated panels ---- */
+  --c-canvas: #090711;
+  --c-surface: #110f1b;
+  --c-raised: #171321;
+  --c-overlay: #1d192b;
+
+  /* ---- Hairline separators; never bright outlines around everything ---- */
+  --c-line: #241f33;
+  --c-line-strong: #332c47;
+
+  /* ---- Text ---- */
+  --c-ink: #f5f3ff;
+  --c-ink-muted: #a39bb8;
+  /* Verified >= 4.5:1 against the lightest surface (--c-overlay) for AA. */
+  --c-ink-faint: #8b83a1;
+
+  /* ---- Violet-led accents ---- */
+  --c-primary: #8b5cf6;
+  --c-primary-bright: #a78bfa;
+  --c-primary-lavender: #c4b5fd;
+  --c-primary-soft: rgb(139 92 246 / 0.14);
+  --c-primary-line: rgb(139 92 246 / 0.34);
+  --c-primary-contrast: #0b0715;
+
+  /* Cyan is reserved for technical data (SPL, IDs, telemetry). */
+  --c-accent: #67e8f9;
+  --c-accent-soft: rgb(103 232 249 / 0.12);
+  --c-accent-line: rgb(103 232 249 / 0.3);
+
+  /* ---- Semantic status ---- */
+  --c-ok: #4ade80;
+  --c-ok-soft: rgb(74 222 128 / 0.12);
+  --c-warn: #fbbf24;
+  --c-warn-soft: rgb(251 191 36 / 0.12);
+  --c-bad: #fb7185;
+  --c-bad-soft: rgb(251 113 133 / 0.12);
+
+  /* ---- Gradients: used selectively, never on every card ---- */
+  --g-primary: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  --g-hero: radial-gradient(
+    ellipse 70% 50% at 50% 0%,
+    rgb(139 92 246 / 0.16),
+    transparent 70%
+  );
+  --g-rail: linear-gradient(180deg, rgb(139 92 246 / 0.06), transparent 40%);
+
+  /* ---- Elevation ---- */
+  --e-panel: 0 1px 2px rgb(0 0 0 / 0.5);
+  --e-raised: 0 8px 24px -8px rgb(0 0 0 / 0.6);
+  --e-overlay: 0 20px 48px -16px rgb(0 0 0 / 0.75);
+  --e-primary: 0 6px 20px -6px rgb(139 92 246 / 0.45);
+  --sheen: inset 0 1px 0 0 rgb(255 255 255 / 0.05);
+
+  color-scheme: dark;
+}
+
+[data-theme='light'] {
+  /* Cool white with a lavender cast — designed, not an inversion. */
+  --c-canvas: #f7f6fb;
+  --c-surface: #ffffff;
+  --c-raised: #f3f1f9;
+  --c-overlay: #ffffff;
+
+  --c-line: #e6e2f0;
+  --c-line-strong: #d2cce2;
+
+  --c-ink: #17132a;
+  --c-ink-muted: #5b5372;
+  /* Verified >= 4.5:1 against --c-raised, the lightest light-theme surface. */
+  --c-ink-faint: #665e7e;
+
+  /* Darker accents so coloured text clears AA on light surfaces and on its
+     own tinted background (badges, callouts). */
+  --c-primary: #6d28d9;
+  --c-primary-bright: #7c3aed;
+  --c-primary-lavender: #6d28d9;
+  --c-primary-soft: rgb(109 40 217 / 0.09);
+  --c-primary-line: rgb(109 40 217 / 0.26);
+  --c-primary-contrast: #ffffff;
+
+  --c-accent: #0e7490;
+  --c-accent-soft: rgb(14 116 144 / 0.09);
+  --c-accent-line: rgb(14 116 144 / 0.26);
+
+  --c-ok: #036249;
+  --c-ok-soft: rgb(3 98 73 / 0.1);
+  --c-warn: #8a5406;
+  --c-warn-soft: rgb(138 84 6 / 0.11);
+  --c-bad: #b3213a;
+  --c-bad-soft: rgb(179 33 58 / 0.09);
+
+  --g-primary: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+  --g-hero: radial-gradient(
+    ellipse 70% 50% at 50% 0%,
+    rgb(109 40 217 / 0.08),
+    transparent 70%
+  );
+  --g-rail: linear-gradient(180deg, rgb(109 40 217 / 0.04), transparent 40%);
+
+  --e-panel: 0 1px 2px rgb(23 19 42 / 0.05);
+  --e-raised: 0 8px 24px -10px rgb(23 19 42 / 0.13);
+  --e-overlay: 0 20px 48px -16px rgb(23 19 42 / 0.18);
+  --e-primary: 0 6px 20px -8px rgb(109 40 217 / 0.35);
+  --sheen: inset 0 1px 0 0 rgb(255 255 255 / 0.9);
+
+  color-scheme: light;
+}
+
+@theme inline {
+  --color-canvas: var(--c-canvas);
+  --color-surface: var(--c-surface);
+  --color-raised: var(--c-raised);
+  --color-overlay: var(--c-overlay);
+
+  --color-line: var(--c-line);
+  --color-line-strong: var(--c-line-strong);
+
+  --color-ink: var(--c-ink);
+  --color-ink-muted: var(--c-ink-muted);
+  --color-ink-faint: var(--c-ink-faint);
+
+  --color-primary: var(--c-primary);
+  --color-primary-bright: var(--c-primary-bright);
+  --color-primary-lavender: var(--c-primary-lavender);
+  --color-primary-soft: var(--c-primary-soft);
+  --color-primary-line: var(--c-primary-line);
+  --color-primary-contrast: var(--c-primary-contrast);
+
+  --color-accent: var(--c-accent);
+  --color-accent-soft: var(--c-accent-soft);
+  --color-accent-line: var(--c-accent-line);
+
+  --color-ok: var(--c-ok);
+  --color-ok-soft: var(--c-ok-soft);
+  --color-warn: var(--c-warn);
+  --color-warn-soft: var(--c-warn-soft);
+  --color-bad: var(--c-bad);
+  --color-bad-soft: var(--c-bad-soft);
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Inter',
+    'Helvetica Neue', Arial, sans-serif;
+  --font-mono:
+    ui-monospace, 'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas,
+    'Liberation Mono', monospace;
+
+  --radius-panel: 0.85rem;
+
+  /* Motion durations, shared by CSS transitions and Motion components. */
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 340ms;
+}
+
+@layer base {
+  * {
+    border-color: var(--c-line);
+  }
+
+  body {
+    background-color: var(--c-canvas);
+    color: var(--c-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow-x: hidden;
+    transition:
+      background-color var(--dur-base) var(--ease-out-soft),
+      color var(--dur-base) var(--ease-out-soft);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--c-primary-bright);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background-color: var(--c-primary-soft);
+    color: var(--c-ink);
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--c-line-strong);
+    border: 2px solid transparent;
+    background-clip: content-box;
+    border-radius: 6px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--c-ink-faint);
+    background-clip: content-box;
+  }
+
+  summary::-webkit-details-marker {
+    display: none;
+  }
+
+  summary {
+    list-style: none;
+  }
+}
+
+@layer utilities {
+  .sheen {
+    box-shadow: var(--sheen), var(--e-panel);
+  }
+
+  /* Restrained violet wash behind the composer only. */
+  .hero-glow {
+    background-image: var(--g-hero);
+  }
+
+  /*
+   * Cursor-following highlight, scoped to the composer.
+   * --mx/--my are set in JS; unset they sit off-canvas. Disabled for coarse
+   * pointers and reduced motion below.
+   */
+  .spotlight::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity var(--dur-slow) var(--ease-out-soft);
+    background: radial-gradient(
+      380px circle at var(--mx, -999px) var(--my, -999px),
+      var(--c-primary-soft),
+      transparent 66%
+    );
+  }
+
+  .spotlight[data-active='true']::before {
+    opacity: 1;
+  }
+
+  /* Faint grid, masked to fade out — never a full-page animated grid. */
+  .grid-faint {
+    background-image:
+      linear-gradient(to right, var(--c-line) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--c-line) 1px, transparent 1px);
+    background-size: 36px 36px;
+    -webkit-mask-image: radial-gradient(ellipse 75% 55% at 50% 0%, #000 15%, transparent 78%);
+    mask-image: radial-gradient(ellipse 75% 55% at 50% 0%, #000 15%, transparent 78%);
+    opacity: 0.45;
+  }
+
+  /* Gradient text for the hero wordmark accent. */
+  .text-gradient {
+    background: linear-gradient(120deg, var(--c-primary-lavender), var(--c-primary-bright));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+}
+
+/* Touch devices get no cursor-following effect. */
+@media (hover: none), (pointer: coarse) {
+  .spotlight::before {
+    display: none;
+  }
+}
+
+/*
+ * Reduced motion: keep state changes legible, remove movement. The spotlight
+ * tracks continuous pointer movement, so it is disabled entirely.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .spotlight::before {
+    display: none;
+  }
+}

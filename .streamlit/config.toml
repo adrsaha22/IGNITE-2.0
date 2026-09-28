@@ -1,0 +1,23 @@
+# Streamlit theme for IGNITE 2.0 — dark-first security operations interface.
+# Native theme options only; see ui/theme.py for the supplementary CSS layer.
+
+[theme]
+base = "dark"
+
+# Deep charcoal-navy canvas with restrained cyan accent.
+primaryColor = "#38BDF8"
+backgroundColor = "#0F1419"
+secondaryBackgroundColor = "#161C24"
+textColor = "#E6EDF3"
+linkColor = "#7DD3FC"
+
+# Panel styling applied to bordered containers, expanders and inputs.
+borderColor = "#252E3A"
+showWidgetBorder = true
+baseRadius = "0.5rem"
+
+font = "sans-serif"
+codeFont = "monospace"
+
+[browser]
+gatherUsageStats = false

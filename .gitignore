@@ -1,3 +1,19 @@
-venv/ 
+# Python
+venv/
 __pycache__/
 *.pyc
+.pytest_cache/
+
+# Node
+node_modules/
+frontend/dist/
+frontend/node_modules/
+*.tsbuildinfo
+
+# Local env
+.env
+.env.local
+
+# Local saved investigations (SQLite)
+data/investigations.db
+data/*.db

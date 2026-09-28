@@ -1,0 +1,177 @@
+/**
+ * Adapts a Gemini generation response into the shape the existing tabs render.
+ *
+ * The five result tabs were built against the legacy `Analysis` contract.
+ * Rather than rewriting them, the generated candidates are projected onto that
+ * shape and the full LLM detail is carried alongside in `generation`, so
+ * candidate-specific fields (assumptions, blind spots, mappings, provenance)
+ * stay attached to the right candidate.
+ *
+ * Nothing is invented here. Fields the generation path does not produce are
+ * left empty so the UI shows an honest "not available" rather than a
+ * plausible-looking default.
+ */
+
+import type {
+  Analysis,
+  AttackMapping,
+  CandidateRule,
+  GeneratedCandidate,
+  GenerateRulesResult,
+  Technique,
+} from '@/types/api'
+
+/** The LLM detail the legacy `Analysis` shape has no room for. */
+export interface GenerationDetail {
+  candidates: GeneratedCandidate[]
+  status: string
+  message: string
+}
+
+export interface GeneratedAnalysis extends Analysis {
+  /** Present only when the analysis came from the LLM path. */
+  generation: GenerationDetail
+}
+
+/** Whether an analysis was produced by the LLM path rather than the legacy one. */
+export function isGenerated(analysis: Analysis | null): analysis is GeneratedAnalysis {
+  return Boolean(analysis && 'generation' in analysis)
+}
+
+/**
+ * Candidates are presented in the order the model ranked them.
+ *
+ * No numeric score is fabricated: the generation path produces no ranking
+ * heuristic, so `score` carries the position only, and `score_max` matches it
+ * so no progress bar implies a quality judgement that was never made.
+ */
+function toCandidateRule(candidate: GeneratedCandidate, index: number): CandidateRule {
+  return {
+    spl: candidate.spl,
+    // Position in the model's own ordering — not a quality score.
+    score: index + 1,
+    score_max: index + 1,
+    origin: candidate.name || `Candidate ${index + 1}`,
+    // Static text observation from the backend's own checks.
+    has_conditions: candidate.static_findings.length === 0,
+  }
+}
+
+/** Only mappings whose ID was verified against the dataset become techniques. */
+function toTechnique(mapping: AttackMapping): Technique {
+  return { id: mapping.id, name: mapping.name, tactic: null }
+}
+
+/**
+ * Collect warnings the user must see.
+ *
+ * These are the backend's deterministic findings plus mapping-quality notes —
+ * never model self-assessment.
+ */
+function collectWarnings(candidates: GeneratedCandidate[]): string[] {
+  const warnings: string[] = []
+
+  candidates.forEach((candidate, index) => {
+    const label = candidate.name || `Candidate ${index + 1}`
+
+    candidate.static_findings.forEach((finding) => {
+      warnings.push(`${label}: ${finding}`)
+    })
+
+    candidate.attack_mappings.forEach((mapping) => {
+      if (!mapping.reference_verified) {
+        warnings.push(
+          `${label}: technique ${mapping.id} could not be verified against the ATT&CK dataset.`,
+        )
+      } else if (!mapping.mapping_supported) {
+        warnings.push(
+          `${label}: ${mapping.id} is a real technique, but no evidence links this rule to it — review before relying on the mapping.`,
+        )
+      }
+    })
+  })
+
+  return warnings
+}
+
+/**
+ * Project a successful generation response onto the `Analysis` contract.
+ *
+ * `autonomous` is populated only with what the generation path genuinely
+ * produces. Validation and quality scores are left null because the LLM path
+ * runs no such heuristic — showing a number here would be fabrication.
+ */
+export function toAnalysis(
+  scenario: string,
+  result: GenerateRulesResult,
+): GeneratedAnalysis {
+  const candidates = result.candidates
+  const first = candidates[0]
+
+  const rules = candidates.map(toCandidateRule)
+
+  // Techniques shown come only from verified IDs; unverified ones surface as
+  // warnings instead, so the ATT&CK view never overstates coverage.
+  const techniques = (first?.attack_mappings ?? [])
+    .filter((mapping) => mapping.reference_verified)
+    .map(toTechnique)
+
+  const primary = techniques[0] ?? { id: 'Unknown', name: '', tactic: null }
+
+  const generatedAt =
+    first?.provenance?.generated_at ?? new Date().toISOString().slice(0, 19) + '+00:00'
+
+  return {
+    description: scenario,
+    generated_at: generatedAt,
+    primary_technique: primary,
+    // Entities are a legacy-pipeline concept; the generation path declares a
+    // log source instead, so these stay empty rather than being invented.
+    entities: {
+      tools: [],
+      indicators: [],
+      logs: first?.log_source?.sourcetype ? [first.log_source.sourcetype] : [],
+      fields: first?.log_source?.fields ?? [],
+    },
+    candidates: rules,
+    best: rules[0] ?? null,
+    autonomous: {
+      available: true,
+      error: null,
+      techniques,
+      telemetry: {
+        logs: first?.log_source?.sourcetype ? [first.log_source.sourcetype] : [],
+        fields: first?.log_source?.fields ?? [],
+        events: first?.log_source?.event_ids ?? [],
+        indicators: [],
+      },
+      telemetry_rule: '',
+      rule: first?.spl ?? '',
+      rule_has_conditions: (first?.static_findings.length ?? 0) === 0,
+      // No heuristic validator runs on the LLM path. Null, not zero — a zero
+      // would read as "scored badly" rather than "not scored".
+      validation: {
+        valid: null,
+        score: null,
+        score_max: 100,
+        issues: first?.static_findings ?? [],
+      },
+      quality: {
+        quality_score: null,
+        score_max: 100,
+        strengths: [],
+        weaknesses: first?.blind_spots ?? [],
+      },
+      explanation: first?.hypothesis ?? '',
+    },
+    sigma_references: [],
+    warnings: collectWarnings(candidates),
+    rule_status:
+      'generated by LLM — static checks run; not validated against a live Splunk instance',
+    generation: {
+      candidates,
+      status: result.status,
+      message: result.message,
+    },
+  }
+}
