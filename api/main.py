@@ -6,13 +6,14 @@ A thin HTTP layer over the existing Python detection modules. Run with:
 """
 
 import logging
+import threading
 
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import detection, workbench
+from api.routes import detection, library, workbench
 from api.settings import CORS_ORIGINS
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -29,6 +30,23 @@ async def lifespan(application: FastAPI):
     """
     paths = sorted(application.openapi().get("paths", {}))
     logger.info("API routes mounted (%d): %s", len(paths), ", ".join(paths))
+
+    # Index the Sigma corpus in the background (a few seconds for SigmaHQ),
+    # so the first analysis does not pay for it.
+    def warm_sigma_index() -> None:
+        try:
+            from modules.sigma_search import corpus_size
+
+            logger.info("Sigma corpus indexed: %d rules", corpus_size())
+        except Exception:
+            logger.exception("Sigma corpus could not be indexed")
+
+    threading.Thread(target=warm_sigma_index, daemon=True).start()
+
+    # Re-apply the AI provider chosen on the dashboard before the last restart.
+    from api.services import ai_switch
+
+    ai_switch.restore_saved_choice()
     yield
 
 
@@ -44,12 +62,13 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
     allow_credentials=False,
-    allow_methods=["GET", "POST", "PATCH", "DELETE"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Content-Type"],
 )
 
 app.include_router(detection.router, prefix="/api")
 app.include_router(workbench.router, prefix="/api")
+app.include_router(library.router, prefix="/api")
 
 
 @app.get("/")

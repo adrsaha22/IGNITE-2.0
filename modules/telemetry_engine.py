@@ -1,7 +1,10 @@
 import json
+import os
+
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 
 with open(
-    "data/telemetry_catalog.json",
+    os.path.join(DATA_DIR, "telemetry_catalog.json"),
     "r",
     encoding="utf-8"
 ) as f:

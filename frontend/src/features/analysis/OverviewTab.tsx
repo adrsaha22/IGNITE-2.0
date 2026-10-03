@@ -3,6 +3,7 @@ import { CodePanel } from '@/components/ui/code-panel'
 import { Badge, EmptyState, Panel, PanelHeader, SectionLabel } from '@/components/ui/primitives'
 import { ScoreMeter, Stat } from '@/components/ui/score'
 import type { Analysis } from '@/types/api'
+import { isGenerated } from '@/lib/generation'
 import { fileStamp } from '@/lib/utils'
 
 /**
@@ -15,6 +16,8 @@ export function OverviewTab({ analysis }: { analysis: Analysis }) {
   const validation = auto.validation
   const quality = auto.quality
   const issues = validation.issues ?? []
+  // Generated analyses carry the backend's weighted quality checks.
+  const checked = isGenerated(analysis) && validation.valid !== null
 
   const status = (() => {
     if (!auto.available) {
@@ -24,9 +27,20 @@ export function OverviewTab({ analysis }: { analysis: Analysis }) {
       return { tone: 'warn' as const, label: 'Passed with warnings', icon: TriangleAlert }
     }
     if (validation.valid) {
-      return { tone: 'ok' as const, label: 'Passed static checks', icon: ShieldCheck }
+      return {
+        tone: 'ok' as const,
+        label: checked ? 'Passed quality checks' : 'Passed static checks',
+        icon: ShieldCheck,
+      }
     }
-    return { tone: 'bad' as const, label: 'Failed static checks', icon: ShieldX }
+    if (validation.valid === null) {
+      return { tone: 'warn' as const, label: 'Not scored', icon: CircleAlert }
+    }
+    return {
+      tone: 'bad' as const,
+      label: checked ? 'Failed quality checks' : 'Failed static checks',
+      icon: ShieldX,
+    }
   })()
 
   const StatusIcon = status.icon
@@ -120,16 +134,24 @@ export function OverviewTab({ analysis }: { analysis: Analysis }) {
 
           <div className="space-y-4">
             <ScoreMeter
-              label="Validation"
+              label={checked ? 'Checks passed' : 'Validation'}
               value={validation.score}
               max={validation.score_max}
-              caveat="Static text checks, not runtime validation"
+              caveat={
+                checked
+                  ? 'Of the weighted checks that ran'
+                  : 'Static text checks, not runtime validation'
+              }
             />
             <ScoreMeter
               label="Rule quality"
               value={quality.quality_score}
               max={quality.score_max}
-              caveat="Heuristic, not a measure of effectiveness"
+              caveat={
+                checked
+                  ? 'Weighted quality score; any failure caps it at 49'
+                  : 'Heuristic, not a measure of effectiveness'
+              }
             />
             {best && (
               <ScoreMeter

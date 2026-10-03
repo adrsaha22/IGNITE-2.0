@@ -42,8 +42,9 @@ const ACTIONS: { action: CopilotAction; label: string }[] = [
 
 /** Human wording for each failure mode. */
 const STATUS_HINT: Record<string, string> = {
-  not_configured: 'Set GEMINI_API_KEY in the backend environment to enable the Copilot.',
-  unauthorized: 'The configured API key was rejected. Check GEMINI_API_KEY.',
+  not_configured:
+    'Choose a configured AI from the AI menu in the header (the Assistant is off in Demo mode), or add its key to the backend .env.',
+  unauthorized: 'The configured API key was rejected. Check the key in the backend .env.',
   rate_limited: 'Free-tier quota reached. Wait a moment before retrying.',
   timeout: 'The provider did not respond in time.',
   unreachable: 'The provider could not be reached.',
@@ -53,7 +54,7 @@ const STATUS_HINT: Record<string, string> = {
 }
 
 /**
- * AI Detection Copilot.
+ * AI Detection Assistant.
  *
  * Sends only the current scenario, selected rule, validation findings and
  * ATT&CK mappings — never the whole application state. Answers are rendered as
@@ -142,7 +143,7 @@ export function CopilotPanel({
           message:
             error instanceof ApiError
               ? error.message
-              : 'The Copilot request could not be completed.',
+              : 'The Assistant request could not be completed.',
           model: '',
           ai_generated: true,
         })
@@ -160,7 +161,7 @@ export function CopilotPanel({
   return (
     <Panel>
       <PanelHeader
-        title="AI Detection Copilot"
+        title="AI Detection Assistant"
         description="Explains and critiques the selected rule. Rule generation never depends on it."
         icon={<Sparkles className="size-4" />}
         actions={
@@ -174,7 +175,7 @@ export function CopilotPanel({
               variant="ghost"
               size="sm"
               onClick={() => void checkStatus()}
-              aria-label="Re-check Copilot configuration"
+              aria-label="Re-check Assistant configuration"
             >
               <RefreshCw />
               Recheck
@@ -199,7 +200,7 @@ export function CopilotPanel({
         )}
 
         {!analysis ? (
-          <EmptyState message="Generate detection rules first — the Copilot works from the current investigation." />
+          <EmptyState message="Generate detection rules first — the Assistant works from the current investigation." />
         ) : (
           <>
             <div>
@@ -262,7 +263,7 @@ export function CopilotPanel({
             {loading && (
               <div className="flex items-center gap-2 text-xs text-ink-muted">
                 <Loader2 className="size-3.5 animate-spin text-primary-bright" />
-                Asking the Copilot…
+                Asking the Assistant…
               </div>
             )}
 

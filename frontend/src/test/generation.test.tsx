@@ -159,7 +159,7 @@ describe('generation failures', () => {
     renderApp()
     await generate(user)
 
-    expect(await screen.findByText(/GEMINI_API_KEY/)).toBeInTheDocument()
+    expect(await screen.findByText(/AI menu in the header/)).toBeInTheDocument()
     // No candidates may be shown.
     expect(screen.queryAllByRole('tab')).toHaveLength(0)
   })
@@ -219,7 +219,7 @@ describe('generation failures', () => {
     renderApp()
     await generate(user)
 
-    await screen.findByText(/GEMINI_API_KEY/)
+    await screen.findByText(/AI menu in the header/)
     expect(requested.some((u) => /\/api\/analyze$/.test(u))).toBe(false)
   })
 })

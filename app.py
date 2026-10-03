@@ -399,9 +399,13 @@ with tab_rules:
     st.markdown("")
     section(f"Sigma references ({len(sigma_refs)})")
     if not sigma_refs:
+        from modules.sigma_search import corpus_size
+
         empty_state(
-            "No Sigma rules matched. The data/sigma directory is empty, so this "
-            "pipeline has no corpus to search."
+            "No Sigma rule in the corpus is tagged with the mapped technique."
+            if corpus_size()
+            else "No Sigma rules matched. The Sigma corpus is empty; run "
+            "scripts/download_sources.py to download SigmaHQ."
         )
     else:
         for i, detection in enumerate(sigma_refs, start=1):

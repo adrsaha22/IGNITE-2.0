@@ -1,8 +1,10 @@
 import json
 import os
 
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+
 MITRE_FILE = os.path.join(
-    "data",
+    DATA_DIR,
     "mitre.json"
 )
 

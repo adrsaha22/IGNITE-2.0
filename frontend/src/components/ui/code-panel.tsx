@@ -33,7 +33,8 @@ export function CodePanel({
   filename?: string
   maxHeight?: number
   label?: string
-  language?: 'spl' | 'json'
+  /** 'yaml' renders plain (no highlighting) for Sigma rules. */
+  language?: 'spl' | 'json' | 'yaml'
   className?: string
   emptyMessage?: string
   onCopied?: (ok: boolean) => void
@@ -42,7 +43,12 @@ export function CodePanel({
   const text = (code ?? '').trim()
 
   const tokens = useMemo(
-    () => (language === 'json' ? tokenizeJSON(text) : tokenizeSPL(text)),
+    () =>
+      language === 'json'
+        ? tokenizeJSON(text)
+        : language === 'yaml'
+          ? [{ kind: 'plain' as const, text }]
+          : tokenizeSPL(text),
     [text, language],
   )
 
@@ -67,7 +73,7 @@ export function CodePanel({
     >
       <div className="flex items-center justify-between gap-2 border-b border-line bg-raised px-3 py-1.5">
         <span className="truncate font-mono text-[0.66rem] tracking-[0.1em] text-ink-faint uppercase">
-          {label ?? (language === 'json' ? 'JSON' : 'Splunk SPL')}
+          {label ?? (language === 'json' ? 'JSON' : language === 'yaml' ? 'Sigma YAML' : 'Splunk SPL')}
         </span>
         <div className="flex shrink-0 items-center gap-0.5">
           <Tooltip label={copyState === 'copied' ? 'Copied' : 'Copy to clipboard'}>

@@ -23,6 +23,17 @@ const COPILOT_STATUS = {
 /** Overview, Detection Rules, Testing Lab, Attack Intelligence, Validation, Library, Export. */
 const TAB_COUNT = 7
 
+/** The dashboard AI switcher's view of the backend. */
+const AI_PROVIDERS = {
+  active: 'gemini',
+  env_default: 'gemini',
+  overridden: false,
+  options: [
+    { id: 'gemini', label: 'Google Gemini', model: 'gemini-flash-latest', configured: true, ready: true, message: '', local: false, key_env: 'GEMINI_API_KEY' },
+    { id: 'demo', label: 'Demo (no AI)', model: 'offline templates', configured: true, ready: true, message: '', local: true, key_env: '' },
+  ],
+}
+
 const HEALTH = {
   status: 'ok',
   mitre_techniques_loaded: 858,
@@ -40,6 +51,9 @@ function mockApi(
 
     if (url.includes('/health')) {
       return new Response(JSON.stringify(HEALTH), { status: 200 })
+    }
+    if (url.includes('/ai/providers')) {
+      return new Response(JSON.stringify(AI_PROVIDERS), { status: 200 })
     }
     if (url.includes('/ai/status')) {
       return new Response(JSON.stringify(HEALTH.ai), { status: 200 })
@@ -119,11 +133,16 @@ describe('initial render', () => {
     expect(screen.getByRole('button', { name: /generate detection rules/i })).toBeDisabled()
   })
 
-  it('reports AI as offline without blocking the app', async () => {
+  it('shows the active AI and reports the summary model offline without blocking the app', async () => {
     mockApi()
     renderApp()
 
-    expect(await screen.findByText(/ai offline/i)).toBeInTheDocument()
+    // The header switcher names the active AI provider.
+    expect(
+      await screen.findByRole('button', { name: /AI provider: Google Gemini/i }),
+    ).toBeInTheDocument()
+    // The optional summary panel reports its local model as unreachable.
+    expect(await screen.findByRole('button', { name: /check connection/i })).toBeInTheDocument()
     // Rule generation remains available.
     expect(screen.getByRole('button', { name: /generate detection rules/i })).toBeInTheDocument()
   })

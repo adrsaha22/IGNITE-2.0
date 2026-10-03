@@ -408,11 +408,12 @@ def evaluate(query: str, events: list[dict[str, Any]]) -> EvaluationReport:
 # ------------------------------------------------- external adapter seam
 
 class ExternalValidator:
-    """Interface for a future real Splunk validation adapter.
+    """Interface for an external Splunk validation adapter.
 
-    Intentionally unimplemented. A real integration would submit the rule to a
-    Splunk instance and return its verdict; until one exists, nothing in this
-    application may report external runtime validation.
+    The real implementation is ``api.services.splunk_client.SplunkValidator``,
+    used by the quality checks and the rule library when SPLUNK_URL is set.
+    This base class stays unimplemented so the local Testing Lab can never
+    report external validation by accident.
     """
 
     available: bool = False

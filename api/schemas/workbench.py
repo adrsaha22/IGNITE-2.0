@@ -1,6 +1,6 @@
-"""Pydantic models for the Copilot, Testing Lab and saved investigations.
+"""Pydantic models for the Assistant, Testing Lab and saved investigations.
 
-No model here carries a secret. The Copilot status model reports only whether
+No model here carries a secret. The Assistant status model reports only whether
 a key is configured — never the key, nor any fragment of it.
 """
 
@@ -8,7 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-# ------------------------------------------------------------- AI Copilot
+# ------------------------------------------------------------- AI Detection Assistant
 
 COPILOT_ACTIONS = (
     "explain_rule",
@@ -65,7 +65,7 @@ class CopilotSectionModel(BaseModel):
 
 
 class CopilotResponse(BaseModel):
-    """A Copilot answer, or an explained failure. Never fabricated content."""
+    """An Assistant answer, or an explained failure. Never fabricated content."""
 
     ok: bool
     status: str
@@ -78,7 +78,7 @@ class CopilotResponse(BaseModel):
 
 
 class CopilotStatus(BaseModel):
-    """Whether the Copilot can be used. Carries no secret material."""
+    """Whether the Assistant can be used. Carries no secret material."""
 
     configured: bool
     model: str
@@ -217,6 +217,13 @@ class GeneratedCandidateModel(BaseModel):
     # Findings from our deterministic checks, not the model's self-assessment.
     static_findings: list[str] = Field(default_factory=list)
     provenance: dict[str, Any] = Field(default_factory=dict)
+    sigma_rule: str = ""
+    spl_from_sigma: str = ""
+    severity: str = ""
+    response_actions: list[str] = Field(default_factory=list)
+    how_to_implement: str = ""
+    # Weighted quality checks computed by IGNITE (validators.summarize).
+    validation: dict[str, Any] = Field(default_factory=dict)
 
 
 class GenerateRulesRequest(BaseModel):

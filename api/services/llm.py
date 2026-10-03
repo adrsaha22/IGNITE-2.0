@@ -1,14 +1,21 @@
-"""Gemini provider integration for the AI Detection Copilot.
+"""LLM provider integration for rule generation and the AI Detection Assistant.
 
 All provider-specific logic lives here so routes and the UI stay unaware of
-which vendor is in use. The API key never leaves this module: it is read from
-the environment, sent only in the upstream request header, and is never
-returned to the client or written to logs.
+which vendor is in use. API keys never leave this module: they are read from
+the environment, sent only to the provider, and are never returned to the
+client or written to logs.
 
-Uses the REST generateContent endpoint directly with `requests` (already a
-project dependency) rather than adding an SDK. Endpoint shape:
-    POST https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent
-    header: x-goog-api-key
+Providers, selected with IGNITE_LLM_PROVIDER:
+
+* ``gemini`` (default) — REST generateContent endpoint via `requests`:
+  POST {GEMINI_BASE_URL}/v1beta/models/{model}:generateContent
+* ``anthropic`` — Claude, via the official `anthropic` SDK.
+* ``openai`` — via the official `openai` SDK (OPENAI_BASE_URL for Azure or a
+  compatible gateway).
+* ``ollama`` — a local model server; prompts never leave your network.
+
+Every provider maps its failures onto the same LLMStatus values, so the UI
+shows one consistent set of messages whatever vendor is configured.
 """
 
 from __future__ import annotations
@@ -24,8 +31,14 @@ from typing import Any
 import requests
 
 from api.settings import (
+    ANTHROPIC_API_KEY,
+    ANTHROPIC_MODEL,
+    ELLM_API_KEY,
+    ELLM_BASE_URL,
+    ELLM_MODEL,
     GEMINI_API_KEY,
     LLM_MAX_ATTEMPTS,
+    LLM_PROVIDER,
     LLM_RETRY_DELAY,
     GEMINI_BASE_URL,
     GEMINI_MODEL,
@@ -33,13 +46,20 @@ from api.settings import (
     LLM_MAX_INPUT_CHARS,
     LLM_MAX_OUTPUT_TOKENS,
     LLM_READ_TIMEOUT,
+    OLLAMA_BASE_URL,
+    OLLAMA_MODEL,
+    OLLAMA_NUM_CTX,
+    OLLAMA_NUM_PREDICT,
+    OPENAI_API_KEY,
+    OPENAI_BASE_URL,
+    OPENAI_MODEL,
 )
 
 logger = logging.getLogger(__name__)
 
 
 class LLMStatus(str, Enum):
-    """Why a Copilot request did or did not succeed.
+    """Why an Assistant request did or did not succeed.
 
     Each state is distinct so the UI can give an accurate, actionable message
     rather than a generic failure.
@@ -60,7 +80,7 @@ class LLMStatus(str, Enum):
 # containing any part of the API key.
 STATUS_MESSAGE: dict[LLMStatus, str] = {
     LLMStatus.NOT_CONFIGURED: (
-        "The AI Copilot is not configured. Set GEMINI_API_KEY in the backend "
+        "The AI Detection Assistant is not configured. Set GEMINI_API_KEY in the backend "
         "environment to enable it. Detection rule generation works without it."
     ),
     LLMStatus.UNAUTHORIZED: (
@@ -82,7 +102,7 @@ STATUS_MESSAGE: dict[LLMStatus, str] = {
 
 @dataclass
 class CopilotSection:
-    """One parsed section of a structured Copilot answer."""
+    """One parsed section of a structured Assistant answer."""
 
     heading: str
     body: str
@@ -90,7 +110,7 @@ class CopilotSection:
 
 @dataclass
 class LLMResult:
-    """Outcome of a Copilot request.
+    """Outcome of an Assistant request.
 
     `text` is the raw model answer; `sections` is the best-effort structured
     parse. Both are plain text — never HTML — and are rendered as text by the
@@ -108,9 +128,81 @@ class LLMResult:
         return self.status is LLMStatus.OK
 
 
+# Display name and the environment variable holding each provider's secret.
+PROVIDER_LABELS = {
+    "gemini": "google-gemini",
+    "anthropic": "anthropic",
+    "openai": "openai",
+    "ollama": "ollama",
+    "ellm": "ellm",
+}
+_KEY_VARS = {"gemini": "GEMINI_API_KEY", "anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"}
+
+
+# Set by the dashboard's "Demo (no AI)" choice (api/services/ai_switch.py):
+# no provider is called at all.
+AI_DISABLED = False
+
+
+def provider() -> str:
+    return LLM_PROVIDER
+
+
+def provider_label() -> str:
+    return PROVIDER_LABELS.get(LLM_PROVIDER, LLM_PROVIDER)
+
+
+def active_model() -> str:
+    return {
+        "gemini": GEMINI_MODEL,
+        "anthropic": ANTHROPIC_MODEL,
+        "openai": OPENAI_MODEL,
+        "ollama": OLLAMA_MODEL,
+        "ellm": ELLM_MODEL,
+    }.get(LLM_PROVIDER, GEMINI_MODEL)
+
+
 def is_configured() -> bool:
-    """Whether an API key is present. Never reveals the key itself."""
-    return bool(GEMINI_API_KEY and GEMINI_API_KEY.strip())
+    """Whether the active provider has what it needs. Never reveals a key."""
+    if AI_DISABLED:
+        return False
+    if LLM_PROVIDER == "ollama":
+        # A local server needs no key; reachability is checked per request.
+        return bool(OLLAMA_BASE_URL)
+    if LLM_PROVIDER == "ellm":
+        # The key is optional for internal endpoints; URL and model are not.
+        return bool(ELLM_BASE_URL and ELLM_MODEL)
+    key = {"gemini": GEMINI_API_KEY, "anthropic": ANTHROPIC_API_KEY, "openai": OPENAI_API_KEY}.get(
+        LLM_PROVIDER, ""
+    )
+    return bool(key and key.strip())
+
+
+def status_message(status: "LLMStatus") -> str:
+    """User-facing message for a status, naming the active provider's settings."""
+    if AI_DISABLED and status is LLMStatus.NOT_CONFIGURED:
+        return "AI is switched off (Demo mode). Choose an AI provider from the AI menu in the header."
+    if LLM_PROVIDER == "gemini":
+        return STATUS_MESSAGE[status]
+    key_var = _KEY_VARS.get(LLM_PROVIDER, "")
+    if LLM_PROVIDER == "ellm":
+        if status is LLMStatus.NOT_CONFIGURED:
+            return "ELLM is not configured. Set ELLM_BASE_URL and ELLM_MODEL in the backend .env."
+        if status is LLMStatus.UNAUTHORIZED:
+            return "The ELLM endpoint rejected the request. Check ELLM_API_KEY in the backend .env."
+        if status is LLMStatus.UNREACHABLE:
+            return f"The ELLM endpoint at {ELLM_BASE_URL} could not be reached."
+        return STATUS_MESSAGE[status]
+    if status is LLMStatus.NOT_CONFIGURED:
+        return (
+            f"The AI provider ({LLM_PROVIDER}) is not configured. Set {key_var} in the "
+            "backend environment to enable it."
+        )
+    if status is LLMStatus.UNAUTHORIZED:
+        return f"The configured API key was rejected by the provider. Check {key_var}."
+    if status is LLMStatus.UNREACHABLE and LLM_PROVIDER == "ollama":
+        return f"The local Ollama server at {OLLAMA_BASE_URL} could not be reached. Is it running?"
+    return STATUS_MESSAGE[status]
 
 
 # ---------------------------------------------------------------- prompting
@@ -334,8 +426,9 @@ def generate(
     history: list[dict[str, str]] | None = None,
     system_prompt: str | None = None,
     max_output_tokens: int | None = None,
+    json_output: bool = False,
 ) -> LLMResult:
-    """Ask the provider for a Copilot answer.
+    """Ask the provider for an Assistant answer.
 
     Returns an LLMResult in every case — provider failures are reported as
     statuses, never raised, and a failure never yields fabricated content.
@@ -343,7 +436,7 @@ def generate(
     if not is_configured():
         return LLMResult(
             status=LLMStatus.NOT_CONFIGURED,
-            message=STATUS_MESSAGE[LLMStatus.NOT_CONFIGURED],
+            message=status_message(LLMStatus.NOT_CONFIGURED),
         )
 
     prompt = build_prompt(action, question, context, history)
@@ -352,6 +445,28 @@ def generate(
     # different contract (for example strict JSON) override it.
     system = system_prompt if system_prompt is not None else SYSTEM_PROMPT
     tokens = max_output_tokens if max_output_tokens is not None else LLM_MAX_OUTPUT_TOKENS
+
+    if LLM_PROVIDER == "anthropic":
+        return _finish(_call_anthropic(system, prompt, tokens), ANTHROPIC_MODEL)
+    if LLM_PROVIDER == "openai":
+        return _finish(_call_openai(system, prompt, tokens), OPENAI_MODEL)
+    if LLM_PROVIDER == "ellm":
+        return _finish(
+            _call_openai(
+                system,
+                prompt,
+                tokens,
+                api_key=ELLM_API_KEY or "not-needed",
+                base_url=ELLM_BASE_URL,
+                model=ELLM_MODEL,
+                label="ELLM",
+                # Many compatible servers predate max_completion_tokens.
+                legacy_max_tokens=True,
+            ),
+            ELLM_MODEL,
+        )
+    if LLM_PROVIDER == "ollama":
+        return _finish(_call_ollama(system, prompt, json_output), OLLAMA_MODEL)
 
     url = f"{GEMINI_BASE_URL}/v1beta/models/{GEMINI_MODEL}:generateContent"
     body = {
@@ -382,11 +497,11 @@ def generate(
                 timeout=(LLM_CONNECT_TIMEOUT, LLM_READ_TIMEOUT),
             )
         except requests.Timeout:
-            logger.info("Copilot request timed out")
+            logger.info("Assistant request timed out")
             return LLMResult(status=LLMStatus.TIMEOUT, message=STATUS_MESSAGE[LLMStatus.TIMEOUT])
         except requests.RequestException as exc:
             # Log the type only — the message can echo the request URL.
-            logger.info("Copilot request failed: %s", type(exc).__name__)
+            logger.info("Assistant request failed: %s", type(exc).__name__)
             return LLMResult(
                 status=LLMStatus.UNREACHABLE, message=STATUS_MESSAGE[LLMStatus.UNREACHABLE]
             )
@@ -396,9 +511,11 @@ def generate(
             break
 
         logger.info(
-            "Provider returned HTTP %s; retrying once", response.status_code
+            "Provider returned HTTP %s; retrying (attempt %d of %d)",
+            response.status_code, attempt + 2, LLM_MAX_ATTEMPTS,
         )
-        time.sleep(LLM_RETRY_DELAY)
+        # Linear backoff: overload spikes usually clear within a few seconds.
+        time.sleep(LLM_RETRY_DELAY * (attempt + 1))
 
     assert response is not None  # loop always assigns or returns
 
@@ -412,10 +529,20 @@ def generate(
             status=LLMStatus.RATE_LIMITED, message=STATUS_MESSAGE[LLMStatus.RATE_LIMITED]
         )
     if response.status_code >= 400:
-        logger.warning("Provider error HTTP %s", response.status_code)
-        return LLMResult(
-            status=LLMStatus.PROVIDER_ERROR, message=STATUS_MESSAGE[LLMStatus.PROVIDER_ERROR]
-        )
+        # The provider's error message never contains the key, and without it
+        # a 400/404 (bad model ID, etc.) is impossible to diagnose.
+        try:
+            detail = str(response.json().get("error", {}).get("message", ""))[:300]
+        except (ValueError, AttributeError):
+            detail = ""
+        logger.warning("Provider error HTTP %s: %s", response.status_code, detail)
+        message = STATUS_MESSAGE[LLMStatus.PROVIDER_ERROR]
+        if response.status_code == 503:
+            message = (
+                f"The model '{GEMINI_MODEL}' is overloaded right now (the provider "
+                "reports high demand). Wait a minute and try again."
+            )
+        return LLMResult(status=LLMStatus.PROVIDER_ERROR, message=message)
 
     try:
         payload = response.json()
@@ -435,3 +562,176 @@ def generate(
         sections=parse_sections(text),
         model=GEMINI_MODEL,
     )
+
+
+# ------------------------------------------------------- other providers
+
+# Models that accept Anthropic's server-side refusal fallback. On a policy
+# decline the API re-runs the request on a suitable fallback model within the
+# same call, instead of the request simply stopping.
+_ANTHROPIC_FALLBACK_MODELS = {"claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"}
+
+
+def _finish(outcome: tuple[str, LLMStatus], model: str) -> LLMResult:
+    text, status = outcome
+    if status is not LLMStatus.OK:
+        return LLMResult(status=status, message=status_message(status))
+    if not text.strip():
+        return LLMResult(status=LLMStatus.MALFORMED, message=status_message(LLMStatus.MALFORMED))
+    return LLMResult(status=LLMStatus.OK, text=text.strip(), sections=parse_sections(text), model=model)
+
+
+def _call_anthropic(system: str, prompt: str, tokens: int) -> tuple[str, LLMStatus]:
+    """Claude via the official SDK. The SDK retries 429/5xx itself."""
+    try:
+        import anthropic
+    except ImportError:
+        logger.warning("The 'anthropic' package is not installed")
+        return "", LLMStatus.PROVIDER_ERROR
+
+    client = anthropic.Anthropic(
+        api_key=ANTHROPIC_API_KEY,
+        # Thinking runs before the answer, so allow longer than the Gemini read timeout.
+        timeout=anthropic.Timeout(max(LLM_READ_TIMEOUT, 180.0), connect=LLM_CONNECT_TIMEOUT),
+        max_retries=max(LLM_MAX_ATTEMPTS - 1, 0),
+    )
+    # Current Claude models think before answering and that counts toward
+    # max_tokens, so a prose-sized budget would truncate the reply.
+    params: dict[str, Any] = {
+        "model": ANTHROPIC_MODEL,
+        "max_tokens": max(tokens, 16000),
+        "system": system,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+
+    try:
+        if ANTHROPIC_MODEL in _ANTHROPIC_FALLBACK_MODELS:
+            resp = client.beta.messages.create(
+                betas=["server-side-fallback-2026-07-01"], fallbacks="default", **params
+            )
+        else:
+            resp = client.messages.create(**params)
+    except (anthropic.AuthenticationError, anthropic.PermissionDeniedError):
+        logger.warning("Anthropic rejected the configured API key")
+        return "", LLMStatus.UNAUTHORIZED
+    except anthropic.RateLimitError:
+        return "", LLMStatus.RATE_LIMITED
+    except anthropic.APITimeoutError:
+        return "", LLMStatus.TIMEOUT
+    except anthropic.APIConnectionError:
+        return "", LLMStatus.UNREACHABLE
+    except anthropic.APIStatusError as exc:
+        logger.warning("Anthropic error HTTP %s: %s", exc.status_code, str(exc.message)[:300])
+        return "", LLMStatus.PROVIDER_ERROR
+
+    if resp.stop_reason == "refusal":
+        return "", LLMStatus.BLOCKED
+    text = "".join(getattr(b, "text", "") for b in resp.content if getattr(b, "type", "") == "text")
+    return text, LLMStatus.OK
+
+
+def _call_openai(
+    system: str,
+    prompt: str,
+    tokens: int,
+    *,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    model: str | None = None,
+    label: str = "OpenAI",
+    legacy_max_tokens: bool = False,
+) -> tuple[str, LLMStatus]:
+    """OpenAI, or any OpenAI-compatible endpoint (Azure, ELLM), via the official SDK."""
+    try:
+        import openai
+    except ImportError:
+        logger.warning("The 'openai' package is not installed")
+        return "", LLMStatus.PROVIDER_ERROR
+
+    client = openai.OpenAI(
+        api_key=api_key if api_key is not None else OPENAI_API_KEY,
+        base_url=(base_url if base_url is not None else OPENAI_BASE_URL) or None,
+        timeout=max(LLM_READ_TIMEOUT, 120.0),
+        max_retries=max(LLM_MAX_ATTEMPTS - 1, 0),
+    )
+    limit = {"max_tokens": tokens} if legacy_max_tokens else {"max_completion_tokens": tokens}
+    try:
+        resp = client.chat.completions.create(
+            model=model or OPENAI_MODEL,
+            temperature=0.2,
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
+            **limit,
+        )
+    except (openai.AuthenticationError, openai.PermissionDeniedError):
+        logger.warning("%s rejected the configured API key", label)
+        return "", LLMStatus.UNAUTHORIZED
+    except openai.RateLimitError:
+        return "", LLMStatus.RATE_LIMITED
+    except openai.APITimeoutError:
+        return "", LLMStatus.TIMEOUT
+    except openai.APIConnectionError:
+        return "", LLMStatus.UNREACHABLE
+    except openai.APIStatusError as exc:
+        logger.warning("%s error HTTP %s: %s", label, exc.status_code, str(exc.message)[:300])
+        return "", LLMStatus.PROVIDER_ERROR
+
+    if not resp.choices:
+        return "", LLMStatus.MALFORMED
+    choice = resp.choices[0]
+    if choice.finish_reason == "content_filter":
+        return "", LLMStatus.BLOCKED
+    return choice.message.content or "", LLMStatus.OK
+
+
+def _call_ollama(system: str, prompt: str, json_output: bool = False) -> tuple[str, LLMStatus]:
+    """A local Ollama server. Local models are slow, so the read timeout is generous."""
+    url = f"{OLLAMA_BASE_URL}/api/chat"
+    body: dict[str, Any] = {
+        "model": OLLAMA_MODEL,
+        "stream": False,
+        # Ollama's default 4096-token window truncates a grounded generation
+        # prompt plus its answer; num_predict stops a runaway answer.
+        "options": {"temperature": 0.2, "num_ctx": OLLAMA_NUM_CTX, "num_predict": OLLAMA_NUM_PREDICT},
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": prompt},
+        ],
+    }
+    if json_output:
+        # Constrains decoding to valid JSON, so a small model cannot ramble.
+        body["format"] = "json"
+    try:
+        response = requests.post(
+            url,
+            json=body,
+            timeout=(LLM_CONNECT_TIMEOUT, max(LLM_READ_TIMEOUT, 600.0)),
+        )
+    except requests.Timeout:
+        return "", LLMStatus.TIMEOUT
+    except requests.RequestException as exc:
+        logger.info("Ollama request failed: %s", type(exc).__name__)
+        return "", LLMStatus.UNREACHABLE
+
+    if response.status_code >= 400:
+        logger.warning("Ollama error HTTP %s", response.status_code)
+        return "", LLMStatus.PROVIDER_ERROR
+    try:
+        payload = response.json()
+    except ValueError:
+        return "", LLMStatus.MALFORMED
+    content = (payload.get("message") or {}).get("content", "") if isinstance(payload, dict) else ""
+    return str(content), LLMStatus.OK
+
+
+def provider_status() -> dict[str, Any]:
+    """Active provider, model and configuration. Carries no secret material."""
+    return {
+        "provider": LLM_PROVIDER,
+        "label": provider_label(),
+        "model": active_model(),
+        "configured": is_configured(),
+        "available_providers": list(PROVIDER_LABELS),
+        "message": "" if is_configured() else status_message(LLMStatus.NOT_CONFIGURED),
+        # Demo mode calls no provider at all.
+        "data_leaves_network": not AI_DISABLED and LLM_PROVIDER != "ollama",
+    }

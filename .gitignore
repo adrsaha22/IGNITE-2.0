@@ -17,3 +17,9 @@ frontend/node_modules/
 # Local saved investigations (SQLite)
 data/investigations.db
 data/*.db
+
+# Knowledge base: cloned sources (~1-2 GB) and the rebuildable dataset.
+# The small bundled sample in data/knowledge/sample/ is committed.
+data/knowledge/raw/
+data/knowledge/processed/
+data/knowledge/evaluation.json

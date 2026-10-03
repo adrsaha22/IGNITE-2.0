@@ -23,10 +23,13 @@ export function RulesTab({
   analysis,
   selectedIndex,
   onSelect,
+  onOpenRule,
 }: {
   analysis: Analysis
   selectedIndex: number
   onSelect: (index: number) => void
+  /** Open a saved rule in the library view. */
+  onOpenRule?: (ruleId: string) => void
 }) {
   const toast = useToast()
   const { candidates, autonomous: auto } = analysis
@@ -159,7 +162,12 @@ export function RulesTab({
       {/* Candidate-specific LLM detail, keyed to the selected candidate so
           assumptions and mappings can never belong to another rule. */}
       {isGenerated(analysis) && analysis.generation.candidates[selectedIndex] && (
-        <GeneratedDetail candidate={analysis.generation.candidates[selectedIndex]} />
+        <GeneratedDetail
+          key={selectedIndex}
+          candidate={analysis.generation.candidates[selectedIndex]}
+          scenario={analysis.description}
+          onSaved={onOpenRule}
+        />
       )}
 
       {/* Autonomous engine output */}
@@ -201,7 +209,13 @@ export function RulesTab({
         />
         <div className="p-4">
           {analysis.sigma_references.length === 0 ? (
-            <EmptyState message="No Sigma rules matched. The data/sigma directory has no rule corpus, so this pipeline has nothing to search." />
+            <EmptyState
+              message={
+                isGenerated(analysis)
+                  ? 'Corpus references come from the keyword-template pipeline. This AI-generated result carries its own Sigma rule in the panels above.'
+                  : 'No Sigma rule in the local corpus matched this technique. If the corpus is empty (see the sidebar), run scripts/download_sources.py.'
+              }
+            />
           ) : (
             <div className="space-y-3">
               {analysis.sigma_references.map((reference, index) => (

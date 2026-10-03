@@ -208,9 +208,9 @@ def corpus_facts() -> tuple[int, bool]:
     try:
         from pathlib import Path
 
-        from modules.sigma_search import SIGMA_PATH
+        from modules.sigma_search import sigma_path
 
-        root = Path(SIGMA_PATH)
+        root = Path(sigma_path())
         sigma_available = root.is_dir() and any(root.rglob("*.yml"))
     except Exception as exc:
         logger.warning("Could not inspect Sigma corpus: %s", exc)

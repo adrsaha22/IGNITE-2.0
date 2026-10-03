@@ -1,8 +1,24 @@
-
+# --- Web API and Streamlit fallback
+fastapi
+uvicorn
 streamlit
-ollama
 pandas
 pyyaml
 requests
-fastapi
-uvicorn
+
+# --- Quality gates and knowledge base
+# Sigma -> SPL conversion and strict Sigma validation
+pySigma>=0.11
+pySigma-backend-splunk>=1.1
+# TF-IDF retrieval of reference detections (falls back to token overlap without it)
+scikit-learn>=1.3
+
+# --- AI providers (only the one you configure is used)
+anthropic>=1.0
+openai>=1.40
+# Legacy local AI summary panel
+ollama
+
+# --- Tests
+pytest>=8.0
+httpx

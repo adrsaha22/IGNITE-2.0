@@ -177,9 +177,17 @@ def validation_warnings(analysis: dict) -> list[str]:
         )
 
     if not analysis.get("sigma", {}).get("detections"):
-        warnings.append(
-            "No Sigma rules were matched — the data/sigma directory appears to be empty."
-        )
+        from modules.sigma_search import corpus_size
+
+        if corpus_size():
+            warnings.append(
+                "No Sigma rule in the corpus is tagged with the mapped technique."
+            )
+        else:
+            warnings.append(
+                "No Sigma rules were matched — the data/sigma directory appears to be empty. "
+                "Run scripts/download_sources.py to download the SigmaHQ corpus."
+            )
 
     if analysis.get("mitre_id") == "Unknown":
         warnings.append(

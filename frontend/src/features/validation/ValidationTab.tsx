@@ -1,7 +1,9 @@
-import { CircleCheck, CircleX, Info, ShieldAlert, TriangleAlert } from 'lucide-react'
+import { CircleCheck, CircleX, Gauge, Info, ShieldAlert, TriangleAlert } from 'lucide-react'
 import { Badge, EmptyState, Panel, PanelHeader, SectionLabel } from '@/components/ui/primitives'
+import { ChecksList, GradeBadge, checkCounts } from '@/components/ui/quality'
 import { ScoreMeter } from '@/components/ui/score'
-import type { Analysis } from '@/types/api'
+import { isGenerated } from '@/lib/generation'
+import type { Analysis, GeneratedCandidate } from '@/types/api'
 
 function Findings({
   items,
@@ -26,6 +28,100 @@ function Findings({
   )
 }
 
+const STAGE_TONE: Record<string, string> = {
+  run: 'text-ok',
+  passed: 'text-ok',
+  failed: 'text-bad',
+}
+
+/** Validation for an LLM-generated candidate: the backend's weighted checks. */
+function GeneratedValidation({ candidate }: { candidate: GeneratedCandidate }) {
+  const quality = candidate.validation
+  const stages = candidate.provenance?.validation
+
+  if (!quality) {
+    return (
+      <EmptyState message="This result predates IGNITE's quality checks. Generate again, or save it to the rule library, to run them." />
+    )
+  }
+
+  const counts = checkCounts(quality.checks)
+  const parserRan = quality.splunk_parser !== 'not_configured'
+
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-4 md:grid-cols-3">
+        <Panel className="p-4">
+          <ScoreMeter
+            label="Quality score"
+            value={quality.quality_score}
+            max={100}
+            caveat="Weighted; any failure caps it at 49"
+          />
+        </Panel>
+        <Panel className="p-4">
+          <ScoreMeter
+            label="Checks passed"
+            value={counts.pass}
+            max={counts.pass + counts.warn + counts.fail}
+            caveat={`${counts.skip} skipped (not counted)`}
+          />
+        </Panel>
+        <Panel className="flex flex-col justify-center gap-2 p-4">
+          <SectionLabel>Grade</SectionLabel>
+          <div className="flex items-center gap-2">
+            {quality.passed ? (
+              <CircleCheck className="size-5 text-ok" />
+            ) : (
+              <CircleX className="size-5 text-bad" />
+            )}
+            <GradeBadge score={quality.quality_score} grade={quality.quality_grade} />
+          </div>
+        </Panel>
+      </div>
+
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        <Panel>
+          <PanelHeader
+            title={`Quality checks — ${candidate.name}`}
+            icon={<Gauge className="size-4" />}
+          />
+          <div className="px-4 py-2">
+            <ChecksList checks={quality.checks} />
+          </div>
+        </Panel>
+
+        <Panel>
+          <PanelHeader title="What was validated" icon={<Info className="size-4" />} />
+          <div className="space-y-3 p-4 text-xs leading-relaxed text-ink-muted">
+            {stages && (
+              <ul className="space-y-1 font-mono text-[0.7rem]">
+                {Object.entries(stages).map(([stage, value]) => (
+                  <li key={stage} className={STAGE_TONE[value] ?? 'text-warn'}>
+                    {stage.replace(/_/g, ' ')}: {value}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p>
+              Quality checks inspect the SPL, the Sigma rule, the ATT&amp;CK mapping, false
+              positives and response steps.{' '}
+              {parserRan
+                ? "Splunk's own parser was also asked whether the SPL is valid."
+                : 'Splunk is not connected, so the SPL has not been checked by a real parser.'}
+            </p>
+            <p>
+              None of this runs the rule against real telemetry. Save it to the rule library, run a
+              test search, and deploy in shadow mode to measure real alert volume before going
+              live.
+            </p>
+          </div>
+        </Panel>
+      </div>
+    </div>
+  )
+}
+
 /**
  * Validation reporting.
  *
@@ -33,8 +129,22 @@ function Findings({
  * valid=true alongside unresolved issues, the contradiction is shown at the top
  * of the tab.
  */
-export function ValidationTab({ analysis }: { analysis: Analysis }) {
+export function ValidationTab({
+  analysis,
+  selectedIndex = 0,
+}: {
+  analysis: Analysis
+  selectedIndex?: number
+}) {
   const auto = analysis.autonomous
+
+  if (isGenerated(analysis)) {
+    const candidate =
+      analysis.generation.candidates[selectedIndex] ?? analysis.generation.candidates[0]
+    // Records from before quality checks existed fall through to the
+    // "not scored" view below rather than showing invented numbers.
+    if (candidate?.validation) return <GeneratedValidation candidate={candidate} />
+  }
 
   if (!auto.available) {
     return (
@@ -127,8 +237,8 @@ export function ValidationTab({ analysis }: { analysis: Analysis }) {
               <span className="font-medium text-ink">Externally validated</span> — not performed.
             </p>
             <p>
-              This tool never contacts a Splunk instance, so no rule here is verified to parse or
-              to fire correctly in production. Scores are heuristics, not calibrated
+              Static checking never contacts a Splunk instance, so no rule here is verified to
+              parse or to fire correctly in production. Scores are heuristics, not calibrated
               probabilities.
             </p>
           </div>

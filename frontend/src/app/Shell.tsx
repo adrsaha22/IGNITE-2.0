@@ -6,11 +6,16 @@ import {
   Clock,
   Database,
   FilePlus2,
+  Grid3x3,
   Keyboard,
+  Library,
   Menu,
   PanelLeft,
+  ScrollText,
   Search,
+  Settings2,
   Shield,
+  Sparkles,
   Trash2,
   X,
 } from 'lucide-react'
@@ -22,6 +27,58 @@ import type { AIPhase } from '@/hooks/useAIStatus'
 import type { HistoryEntry } from '@/hooks/useHistory'
 import type { Health } from '@/types/api'
 import { cn, formatTimestamp } from '@/lib/utils'
+
+export type View = 'generate' | 'library' | 'coverage' | 'activity' | 'platform'
+
+export const VIEWS: { value: View; label: string; icon: typeof Sparkles }[] = [
+  { value: 'generate', label: 'Generate', icon: Sparkles },
+  { value: 'library', label: 'Rule Library', icon: Library },
+  { value: 'coverage', label: 'ATT&CK Coverage', icon: Grid3x3 },
+  { value: 'activity', label: 'Activity', icon: ScrollText },
+  { value: 'platform', label: 'Platform', icon: Settings2 },
+]
+
+/** Primary navigation between the workspace and the governance views. */
+function NavList({
+  collapsed,
+  view,
+  onNavigate,
+}: {
+  collapsed: boolean
+  view: View
+  onNavigate: (view: View) => void
+}) {
+  return (
+    <nav aria-label="Main" className="px-3 pb-3">
+      <ul className="space-y-0.5">
+        {VIEWS.map(({ value, label, icon: Icon }) => {
+          const active = value === view
+          const button = (
+            <button
+              onClick={() => onNavigate(value)}
+              aria-current={active ? 'page' : undefined}
+              aria-label={collapsed ? label : undefined}
+              className={cn(
+                'flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-1.5 text-left text-sm',
+                'transition-colors duration-[var(--dur-fast)]',
+                collapsed && 'justify-center px-0',
+                active
+                  ? 'border-primary-line bg-primary-soft text-primary-bright'
+                  : 'border-transparent text-ink-muted hover:bg-raised hover:text-ink',
+              )}
+            >
+              <Icon className="size-4 shrink-0" aria-hidden />
+              {!collapsed && <span className="truncate">{label}</span>}
+            </button>
+          )
+          return (
+            <li key={value}>{collapsed ? <Tooltip label={label}>{button}</Tooltip> : button}</li>
+          )
+        })}
+      </ul>
+    </nav>
+  )
+}
 
 /** AI connection status. Reflects the real backend probe — never hardcoded. */
 function AIIndicator({ phase, detail }: { phase: AIPhase; detail?: string }) {
@@ -130,6 +187,8 @@ function SidebarContent({
   onRestore,
   onClearHistory,
   activeId,
+  view,
+  onNavigate,
 }: {
   collapsed: boolean
   health: Health | null
@@ -138,6 +197,8 @@ function SidebarContent({
   onRestore: (entry: HistoryEntry) => void
   onClearHistory: () => void
   activeId: string | null
+  view: View
+  onNavigate: (view: View) => void
 }) {
   const [query, setQuery] = useState('')
   const [confirmClear, setConfirmClear] = useState(false)
@@ -170,6 +231,8 @@ function SidebarContent({
           </Button>
         )}
       </div>
+
+      <NavList collapsed={collapsed} view={view} onNavigate={onNavigate} />
 
       {!collapsed && (
         <div className="flex min-h-0 flex-1 flex-col px-3">
@@ -318,6 +381,9 @@ export function Shell({
   onClearHistory,
   hasAnalysis,
   activeId,
+  view = 'generate',
+  onNavigate = () => {},
+  aiControl,
 }: {
   children: React.ReactNode
   aiPhase: AIPhase
@@ -329,6 +395,10 @@ export function Shell({
   onClearHistory: () => void
   hasAnalysis: boolean
   activeId: string | null
+  view?: View
+  onNavigate?: (view: View) => void
+  /** Header AI control; falls back to the legacy status indicator. */
+  aiControl?: React.ReactNode
 }) {
   const reduced = useReducedMotion()
   const [collapsed, setCollapsed] = useState(false)
@@ -366,6 +436,20 @@ export function Shell({
       setDrawerOpen(false)
     },
     activeId,
+    view,
+    onNavigate: (next: View) => {
+      onNavigate(next)
+      setDrawerOpen(false)
+    },
+  }
+
+  const viewLabel = VIEWS.find((item) => item.value === view)?.label ?? 'Generate'
+  const subtitle: Record<View, string> = {
+    generate: hasAnalysis ? 'Analysis complete' : 'Ready for your next investigation',
+    library: 'Review, validate, deploy and export governed rules',
+    coverage: 'Where your detections are, and where the gaps are',
+    activity: 'Append-only audit trail',
+    platform: 'Providers, Splunk, knowledge base and evaluation',
   }
 
   return (
@@ -462,16 +546,16 @@ export function Shell({
               <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-sm">
                 <span className="hidden text-ink-faint sm:inline">Workspace</span>
                 <ChevronRight className="hidden size-3 text-ink-faint sm:inline" aria-hidden />
-                <h1 className="truncate font-semibold text-ink">Detection Rule Generator</h1>
+                <h1 className="truncate font-semibold text-ink">
+                  {view === 'generate' ? 'Detection Rule Generator' : viewLabel}
+                </h1>
               </nav>
-              <p className="truncate text-[0.68rem] text-ink-faint">
-                {hasAnalysis ? 'Analysis complete' : 'Ready for your next investigation'}
-              </p>
+              <p className="truncate text-[0.68rem] text-ink-faint">{subtitle[view]}</p>
             </div>
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            <AIIndicator phase={aiPhase} detail={aiDetail} />
+            {aiControl ?? <AIIndicator phase={aiPhase} detail={aiDetail} />}
             <Tooltip label="Keyboard shortcuts">
               <Button
                 variant="ghost"

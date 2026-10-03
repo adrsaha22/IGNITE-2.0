@@ -31,8 +31,8 @@ export interface AnalysisState {
 /** Actionable guidance per backend failure status. */
 const STATUS_GUIDANCE: Record<string, string> = {
   not_configured:
-    'Set GEMINI_API_KEY in the backend environment and restart the API to enable rule generation.',
-  unauthorized: 'The configured API key was rejected. Check GEMINI_API_KEY.',
+    'Choose a configured AI (or Demo) from the AI menu in the header, or add the key to the backend .env and restart the API.',
+  unauthorized: 'The configured API key was rejected. Check the key in the backend .env.',
   rate_limited: 'The provider rate limit was reached. Wait a moment and try again.',
   timeout: 'The provider did not respond in time. Try again.',
   unreachable: 'The provider could not be reached. Check network connectivity.',

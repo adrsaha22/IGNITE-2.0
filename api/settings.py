@@ -53,7 +53,7 @@ CORS_ORIGINS = [
 # renders do not repeatedly probe the model server.
 AI_STATUS_TTL_SECONDS = int(os.environ.get("IGNITE_AI_STATUS_TTL", "30"))
 
-# ----------------------------------------------------------- AI Copilot
+# ----------------------------------------------------------- AI Detection Assistant
 
 # Secret. Read from the environment only; never logged and never serialised
 # into an API response.
@@ -80,8 +80,8 @@ LLM_GENERATION_MAX_TOKENS = int(os.environ.get("IGNITE_LLM_GENERATION_MAX_TOKENS
 
 # One short retry for transient provider 5xx errors. Deliberately small so a
 # genuinely unavailable provider fails fast instead of stalling the user.
-LLM_MAX_ATTEMPTS = int(os.environ.get("IGNITE_LLM_MAX_ATTEMPTS", "2"))
-LLM_RETRY_DELAY = float(os.environ.get("IGNITE_LLM_RETRY_DELAY", "1.5"))
+LLM_MAX_ATTEMPTS = int(os.environ.get("IGNITE_LLM_MAX_ATTEMPTS", "4"))
+LLM_RETRY_DELAY = float(os.environ.get("IGNITE_LLM_RETRY_DELAY", "2"))
 
 # ------------------------------------------------- Generation mode
 
@@ -89,6 +89,9 @@ LLM_RETRY_DELAY = float(os.environ.get("IGNITE_LLM_RETRY_DELAY", "1.5"))
 # templates so the app can be shown without a provider. An unrecognised value
 # falls back to "gemini" with a warning rather than silently degrading.
 _MODE_RAW = os.environ.get("DETECTION_GENERATION_MODE", "gemini").strip().lower()
+# "llm" is accepted as a provider-neutral alias for "gemini" (the LLM path).
+if _MODE_RAW == "llm":
+    _MODE_RAW = "gemini"
 DETECTION_GENERATION_MODE = _MODE_RAW if _MODE_RAW in ("gemini", "demo") else "gemini"
 
 if _MODE_RAW and _MODE_RAW != DETECTION_GENERATION_MODE:
@@ -105,3 +108,89 @@ DATA_DIR = Path(os.environ.get("IGNITE_DATA_DIR", "data"))
 INVESTIGATIONS_DB = Path(
     os.environ.get("IGNITE_DB_PATH", str(DATA_DIR / "investigations.db"))
 )
+
+# ------------------------------------------------------- LLM providers
+
+# Which provider backs rule generation and the Assistant. Gemini stays the
+# default; Anthropic and OpenAI suit organisations with an enterprise agreement,
+# and Ollama keeps every prompt on your own hardware.
+LLM_PROVIDERS = ("gemini", "anthropic", "openai", "ollama", "ellm")
+_PROVIDER_RAW = os.environ.get("IGNITE_LLM_PROVIDER", "gemini").strip().lower()
+LLM_PROVIDER = _PROVIDER_RAW if _PROVIDER_RAW in LLM_PROVIDERS else "gemini"
+
+if _PROVIDER_RAW and _PROVIDER_RAW != LLM_PROVIDER:
+    import logging as _logging
+
+    _logging.getLogger(__name__).warning(
+        "Unrecognised IGNITE_LLM_PROVIDER=%r; using 'gemini'.", _PROVIDER_RAW
+    )
+
+# Secrets. Read here, used only by api/services/llm.py, never serialised.
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-opus-5-5")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o")
+OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "").rstrip("/")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.1")
+
+# ELLM: your own LLM behind an OpenAI-compatible endpoint (an internal gateway,
+# vLLM, LiteLLM, LM Studio, ...). Needs a base URL and model; the key is
+# optional because many internal endpoints use network-level access instead.
+ELLM_BASE_URL = os.environ.get("ELLM_BASE_URL", "").rstrip("/")
+ELLM_MODEL = os.environ.get("ELLM_MODEL", "")
+ELLM_API_KEY = os.environ.get("ELLM_API_KEY", "")
+
+# Local models on a laptop CPU run at a few tokens per second, so generation
+# with Ollama asks for less: fewer candidates, references and repairs, a
+# context window large enough for the prompt plus the answer, and a bound on
+# answer length. Hosted providers are unaffected.
+OLLAMA_NUM_CTX = int(os.environ.get("OLLAMA_NUM_CTX", "8192"))
+OLLAMA_NUM_PREDICT = int(os.environ.get("OLLAMA_NUM_PREDICT", "2048"))
+OLLAMA_MAX_CANDIDATES = int(os.environ.get("OLLAMA_MAX_CANDIDATES", "1"))
+OLLAMA_RETRIEVAL_TOP_K = int(os.environ.get("OLLAMA_RETRIEVAL_TOP_K", "1"))
+OLLAMA_MAX_REPAIR_ATTEMPTS = int(os.environ.get("OLLAMA_MAX_REPAIR_ATTEMPTS", "1"))
+
+# ------------------------------------------------------ Quality gates
+
+# How many times failed quality checks are sent back to the model for repair.
+# Each repair is one extra provider request, so keep this small on free tiers.
+MAX_REPAIR_ATTEMPTS = int(os.environ.get("IGNITE_MAX_REPAIR_ATTEMPTS", "2"))
+
+# A test search returning this many events or more is flagged as noisy.
+NOISY_RESULT_THRESHOLD = int(os.environ.get("IGNITE_NOISY_THRESHOLD", "50"))
+
+# ---------------------------------------------------------------- Splunk
+
+# Management port (8089), not the web port. Configured on the server only, so
+# the token never travels through the browser.
+SPLUNK_URL = os.environ.get("SPLUNK_URL", "").rstrip("/")
+SPLUNK_TOKEN = os.environ.get("SPLUNK_TOKEN", "")
+SPLUNK_USERNAME = os.environ.get("SPLUNK_USERNAME", "")
+SPLUNK_PASSWORD = os.environ.get("SPLUNK_PASSWORD", "")
+SPLUNK_APP = os.environ.get("SPLUNK_APP", "search")
+SPLUNK_OWNER = os.environ.get("SPLUNK_OWNER", "nobody")
+SPLUNK_VERIFY_SSL = os.environ.get("SPLUNK_VERIFY_SSL", "true").strip().lower() in (
+    "1", "true", "yes", "on",
+)
+SPLUNK_TIMEOUT = float(os.environ.get("SPLUNK_TIMEOUT", "60"))
+
+# ------------------------------------------------------ Knowledge base
+
+# Reference detections (Splunk ESCU + SigmaHQ) used for retrieval. Built by
+# scripts/build_dataset.py; a small bundled sample is used until then.
+KNOWLEDGE_DIR = Path(os.environ.get("IGNITE_KNOWLEDGE_DIR", str(DATA_DIR / "knowledge")))
+KNOWLEDGE_RAW_DIR = KNOWLEDGE_DIR / "raw"
+KNOWLEDGE_PROCESSED_DIR = KNOWLEDGE_DIR / "processed"
+KNOWLEDGE_SAMPLE_DIR = KNOWLEDGE_DIR / "sample"
+RETRIEVAL_TOP_K = int(os.environ.get("IGNITE_RETRIEVAL_TOP_K", "3"))
+
+# ------------------------------------------------------------ Governance
+
+# Name recorded in the audit log for reviews, edits and deployments. There is
+# no login yet, so this identifies the operator running the API. Replace
+# api.services.library.current_actor() when SSO is added.
+OPERATOR_NAME = os.environ.get("IGNITE_OPERATOR", "")
+
+# Minimum length of the written justification required to approve a rule
+# that still fails quality checks.
+OVERRIDE_MIN_CHARS = int(os.environ.get("IGNITE_OVERRIDE_MIN_CHARS", "20"))

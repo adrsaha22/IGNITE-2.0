@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import {
   Braces,
@@ -10,7 +10,8 @@ import {
   Target,
   TriangleAlert,
 } from 'lucide-react'
-import { Shell } from './Shell'
+import { Shell, type View } from './Shell'
+
 import { AIPanel } from '@/features/analysis/AIPanel'
 import { AttackInput } from '@/features/analysis/AttackInput'
 import { OverviewTab } from '@/features/analysis/OverviewTab'
@@ -25,10 +26,26 @@ import { useInvestigations } from '@/hooks/useInvestigations'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/primitives'
 import { isStale, useAnalysis } from '@/hooks/useAnalysis'
 import { useAIStatus } from '@/hooks/useAIStatus'
+import { useAIProviders } from '@/hooks/useAIProviders'
+import { AISwitcher } from '@/components/ui/ai-switcher'
 import { useHistory, type HistoryEntry } from '@/hooks/useHistory'
 import { useReducedMotion } from '@/lib/motion'
-import { getHealth } from '@/lib/api'
-import type { Analysis, Health } from '@/types/api'
+import { getHealth, getPlatformStatus } from '@/lib/api'
+import type { Analysis, Health, PlatformStatus } from '@/types/api'
+
+// Governance views load on first use, keeping the generate workspace lean.
+const RuleLibraryView = lazy(() =>
+  import('@/features/rule-library/RuleLibraryView').then((m) => ({ default: m.RuleLibraryView })),
+)
+const CoverageView = lazy(() =>
+  import('@/features/coverage/CoverageView').then((m) => ({ default: m.CoverageView })),
+)
+const ActivityView = lazy(() =>
+  import('@/features/activity/ActivityView').then((m) => ({ default: m.ActivityView })),
+)
+const PlatformView = lazy(() =>
+  import('@/features/platform/PlatformView').then((m) => ({ default: m.PlatformView })),
+)
 
 const TABS = [
   { value: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -49,9 +66,14 @@ export function App() {
   const [selectedRule, setSelectedRule] = useState(0)
   const [health, setHealth] = useState<Health | null>(null)
   const [activeId, setActiveId] = useState<string | null>(null)
+  const [view, setView] = useState<View>('generate')
+  const [libraryRuleId, setLibraryRuleId] = useState<string | null>(null)
+  const [platform, setPlatform] = useState<PlatformStatus | null>(null)
 
   const history = useHistory()
   const ai = useAIStatus()
+  const aiProviders = useAIProviders()
+  const activeAI = aiProviders.data?.active
   const investigations = useInvestigations()
   // Test cases live alongside the analysis so they are saved with it.
   const [testCases, setTestCases] = useState<TestCase[]>([])
@@ -76,6 +98,25 @@ export function App() {
       .catch(() => setHealth(null))
   }, [])
 
+  // Platform status (Splunk, provider, library counts) refreshes whenever a
+  // governance view opens, so deploy buttons reflect the current backend.
+  useEffect(() => {
+    if (view === 'generate') return
+    getPlatformStatus()
+      .then(setPlatform)
+      .catch(() => setPlatform(null))
+  }, [view, activeAI])
+
+  const openRule = useCallback((ruleId: string) => {
+    setLibraryRuleId(ruleId)
+    setView('library')
+  }, [])
+
+  const generateFor = useCallback((scenario: string) => {
+    setInput(scenario)
+    setView('generate')
+  }, [])
+
   const handleNewAnalysis = useCallback(() => {
     analysis.reset()
     setInput('')
@@ -84,6 +125,7 @@ export function App() {
     setActiveId(null)
     setTestCases([])
     investigations.setCurrentId(null)
+    setView('generate')
   }, [analysis, investigations])
 
   const handleRestore = useCallback(
@@ -93,6 +135,7 @@ export function App() {
       setSelectedRule(0)
       setTab('overview')
       setActiveId(entry.id)
+      setView('generate')
     },
     [analysis],
   )
@@ -118,8 +161,33 @@ export function App() {
       onClearHistory={history.clear}
       hasAnalysis={analysis.analysis !== null}
       activeId={activeId}
+      view={view}
+      onNavigate={setView}
+      aiControl={<AISwitcher state={aiProviders} />}
     >
-      <div className="space-y-5">
+      <Suspense
+        fallback={<p className="text-xs text-ink-muted">Loading…</p>}
+      >
+      {view === 'library' && (
+        <RuleLibraryView
+          selectedId={libraryRuleId}
+          onSelect={setLibraryRuleId}
+          splunk={platform?.splunk ?? null}
+        />
+      )}
+      {view === 'coverage' && <CoverageView onGenerate={generateFor} />}
+      {view === 'activity' && <ActivityView onOpenRule={openRule} />}
+      {view === 'platform' && (
+        <PlatformView
+          status={platform}
+          aiProviders={aiProviders}
+          onSplunkChecked={(splunk) =>
+            setPlatform((current) => (current ? { ...current, splunk } : current))
+          }
+        />
+      )}
+      </Suspense>
+      <div className={view === 'generate' ? 'space-y-5' : 'hidden'}>
         <AttackInput
           value={input}
           onChange={setInput}
@@ -172,6 +240,7 @@ export function App() {
                       analysis={analysis.analysis}
                       selectedIndex={selectedRule}
                       onSelect={setSelectedRule}
+                      onOpenRule={openRule}
                     />
                   </motion.div>
                 </TabsContent>
@@ -192,7 +261,7 @@ export function App() {
                 </TabsContent>
                 <TabsContent value="validation">
                   <motion.div key={`validation-${activeId}`} {...panelMotion}>
-                    <ValidationTab analysis={analysis.analysis} />
+                    <ValidationTab analysis={analysis.analysis} selectedIndex={selectedRule} />
                   </motion.div>
                 </TabsContent>
                 <TabsContent value="library">
@@ -235,7 +304,12 @@ export function App() {
           )}
         </AnimatePresence>
 
-        <CopilotPanel analysis={analysis.analysis} selectedIndex={selectedRule} />
+        {/* Remounts on an AI switch so its status reflects the new provider. */}
+        <CopilotPanel
+          key={activeAI ?? 'none'}
+          analysis={analysis.analysis}
+          selectedIndex={selectedRule}
+        />
 
         <AIPanel description={input} phase={ai.phase} onRecheck={() => void ai.check(true)} />
       </div>

@@ -1,4 +1,4 @@
-"""Routes for the AI Copilot, Testing Lab and saved investigations.
+"""Routes for the AI Detection Assistant, Testing Lab and saved investigations.
 
 Routes stay thin: validate input, call a service, map failures onto status
 codes. No secret is ever placed in a response.
@@ -25,32 +25,32 @@ from api.schemas.workbench import (
     SampleSet,
 )
 from api.services import attack, llm, rule_generator, spl_eval, store
-from api.settings import GEMINI_MODEL
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# ------------------------------------------------------------- AI Copilot
+# ------------------------------------------------------------- AI Detection Assistant
 
 
 @router.get("/copilot/status", response_model=CopilotStatus)
 def copilot_status() -> CopilotStatus:
-    """Whether the Copilot is configured. Reports no key material."""
+    """Whether the Assistant is configured. Reports no key material."""
     configured = llm.is_configured()
     return CopilotStatus(
         configured=configured,
-        model=GEMINI_MODEL,
-        message="" if configured else llm.STATUS_MESSAGE[llm.LLMStatus.NOT_CONFIGURED],
+        model=llm.active_model(),
+        provider=llm.provider_label(),
+        message="" if configured else llm.status_message(llm.LLMStatus.NOT_CONFIGURED),
     )
 
 
 @router.post("/copilot/ask", response_model=CopilotResponse)
 def copilot_ask(request: CopilotRequest) -> CopilotResponse:
-    """Run a Copilot action against the current investigation context.
+    """Run an Assistant action against the current investigation context.
 
     Provider failures are returned as 200 with `ok: false` and an explanatory
-    status, so an unavailable Copilot is a normal degraded state rather than a
+    status, so an unavailable Assistant is a normal degraded state rather than a
     client error that breaks the page.
     """
     result = llm.generate(
@@ -219,26 +219,7 @@ def generate_rules(request: GenerateRulesRequest) -> GenerateRulesResponse:
 
     return GenerateRulesResponse(
         ok=result.ok,
-        candidates=[
-            {
-                "name": c.name,
-                "purpose": c.purpose,
-                "spl": c.spl,
-                "hypothesis": c.hypothesis,
-                "behaviors": c.behaviors,
-                "attack_mappings": c.attack_mappings,
-                "log_source": c.log_source,
-                "assumptions": c.assumptions,
-                "expected_positive_characteristics": c.expected_positive_characteristics,
-                "benign_near_matches": c.benign_near_matches,
-                "blind_spots": c.blind_spots,
-                "required_telemetry": c.required_telemetry,
-                "references": c.references,
-                "static_findings": c.static_findings,
-                "provenance": c.provenance,
-            }
-            for c in result.candidates
-        ],
+        candidates=[rule_generator.candidate_to_dict(c) for c in result.candidates],
         status=result.status,
         message=result.message,
         provenance=result.provenance,
