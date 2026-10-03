@@ -8,11 +8,9 @@ server-side instead.
 import logging
 import time
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException
 
 from api.schemas.analysis import (
-    AIRequest,
-    AIResponse,
     AIStatus,
     AnalysisResponse,
     GenerateRequest,
@@ -52,12 +50,6 @@ def health(refresh: bool = False) -> HealthResponse:
     )
 
 
-@router.get("/ai/status", response_model=AIStatus)
-def ai_status(refresh: bool = False) -> AIStatus:
-    """AI availability on its own, for the header indicator and retry action."""
-    return _cached_ai_status(force=refresh)
-
-
 @router.post("/analyze", response_model=AnalysisResponse)
 def analyze(request: GenerateRequest) -> AnalysisResponse:
     """Run the detection pipeline over an attack description."""
@@ -73,20 +65,6 @@ def analyze(request: GenerateRequest) -> AnalysisResponse:
                 "Please try again or adjust the input."
             ),
         ) from exc
-
-
-@router.post("/ai/analyze", response_model=AIResponse)
-def ai_analyze(request: AIRequest, response: Response) -> AIResponse:
-    """Optional LLM summary.
-
-    Returns 200 with ``available: false`` when the model server is unreachable,
-    so an AI outage is a normal, non-blocking state rather than a client error.
-    """
-    result = detection.run_ai_analysis(request.description.strip())
-    if not result.available:
-        # Advertise degraded capability without failing the request.
-        response.headers["X-AI-Available"] = "false"
-    return result
 
 
 @router.post("/export")

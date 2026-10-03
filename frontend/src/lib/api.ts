@@ -14,8 +14,6 @@ import type {
   RuleSummary,
   RuleUpdate,
   SplunkStatus,
-  AIResult,
-  AIStatus,
   Analysis,
   AttackDatasetInfo,
   CopilotAction,
@@ -98,9 +96,6 @@ export function getHealth(refresh = false): Promise<Health> {
   return request<Health>(`/health${refresh ? '?refresh=true' : ''}`)
 }
 
-export function getAIStatus(refresh = false): Promise<AIStatus> {
-  return request<AIStatus>(`/ai/status${refresh ? '?refresh=true' : ''}`)
-}
 
 export function analyze(description: string): Promise<Analysis> {
   return request<Analysis>('/analyze', {
@@ -109,12 +104,6 @@ export function analyze(description: string): Promise<Analysis> {
   })
 }
 
-export function aiAnalyze(description: string): Promise<AIResult> {
-  return request<AIResult>('/ai/analyze', {
-    method: 'POST',
-    body: JSON.stringify({ description }),
-  })
-}
 
 /* ------------------------------------------------------ AI Detection Assistant */
 

@@ -157,72 +157,9 @@ def test_malformed_module_output_does_not_crash_the_route(client, monkeypatch):
 # --- AI endpoints (no model server required) -----------------------------
 
 
-def test_ai_status_reports_unavailable_when_server_is_down(client):
-    body = client.get("/api/ai/status").json()
-    assert body["available"] is False
-    assert body["detail"]
 
 
-def test_ai_analyze_returns_200_when_model_unreachable(client, monkeypatch):
-    """An AI outage is a normal degraded state, not a client error."""
-    monkeypatch.setattr(
-        "modules.ai_summary.summarize_attack",
-        lambda _: "AI analysis unavailable: Connection refused",
-    )
 
-    response = client.post("/api/ai/analyze", json={"description": POWERSHELL})
-    assert response.status_code == 200
-
-    body = response.json()
-    assert body["available"] is False
-    # The underlying detail is preserved for the technical-details section.
-    assert "Connection refused" in body["error"]
-    assert body["text"] is None
-    assert response.headers.get("X-AI-Available") == "false"
-
-
-def test_ai_analyze_passes_through_a_successful_summary(client, monkeypatch):
-    monkeypatch.setattr(
-        "modules.ai_summary.summarize_attack", lambda _: "Behaviours: PowerShell download."
-    )
-
-    body = client.post("/api/ai/analyze", json={"description": POWERSHELL}).json()
-    assert body["available"] is True
-    assert body["text"] == "Behaviours: PowerShell download."
-
-
-def test_ai_exception_is_contained(client, monkeypatch):
-    def boom(_):
-        raise RuntimeError("model client exploded")
-
-    monkeypatch.setattr("modules.ai_summary.summarize_attack", boom)
-
-    body = client.post("/api/ai/analyze", json={"description": POWERSHELL}).json()
-    assert body["available"] is False
-    # The raw exception text is not returned to the user.
-    assert "model client exploded" not in (body["error"] or "")
-
-
-def test_ai_status_is_cached_between_calls(client, monkeypatch):
-    """Ordinary renders must not repeatedly probe the model server."""
-    calls = {"n": 0}
-
-    def counting_status():
-        calls["n"] += 1
-        return service.AIStatus(available=False, detail="stub", checked_at="now")
-
-    monkeypatch.setattr(service, "ai_status", counting_status)
-    routes._ai_cache["value"] = None
-    routes._ai_cache["at"] = 0.0
-
-    client.get("/api/ai/status")
-    client.get("/api/ai/status")
-    client.get("/api/ai/status")
-    assert calls["n"] == 1, "status should be served from cache"
-
-    # An explicit refresh bypasses the cache.
-    client.get("/api/ai/status?refresh=true")
-    assert calls["n"] == 2
 
 
 def test_detection_works_while_ai_is_unavailable(client, monkeypatch):

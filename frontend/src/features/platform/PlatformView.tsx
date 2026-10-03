@@ -1,11 +1,9 @@
 import { useState } from 'react'
 import {
-  BookOpen,
   Bot,
   CircleCheck,
   CircleDashed,
   CircleX,
-  Database,
   Library,
   Loader2,
   PlugZap,
@@ -48,12 +46,6 @@ function Ok({ ok, yes, no }: { ok: boolean | null; yes: string; no: string }) {
   )
 }
 
-const PERCENT_KEYS = [
-  ['validation_pass_rate', 'Pass all checks'],
-  ['first_try_pass_rate', 'Pass first try'],
-  ['mitre_exact_match', 'ATT&CK exact match'],
-  ['mitre_parent_match', 'ATT&CK parent match'],
-] as const
 
 /** Integrations and data the platform depends on. Shows configuration, never secrets. */
 export function PlatformView({
@@ -72,8 +64,7 @@ export function PlatformView({
     return <EmptyState message="Platform status could not be loaded. Is the API running?" />
   }
 
-  const { provider, splunk, knowledge, library } = status
-  const evaluation = knowledge.last_evaluation
+  const { provider, splunk, library } = status
 
   async function handleCheck() {
     setChecking(true)
@@ -185,76 +176,6 @@ export function PlatformView({
             )}
           </div>
           {splunk.message && <p className="px-4 pb-3 text-xs text-warn">{splunk.message}</p>}
-        </Panel>
-
-        <Panel>
-          <PanelHeader
-            title="Knowledge base"
-            description="Reference detections retrieved to ground every generation."
-            icon={<Database className="size-4" />}
-            actions={
-              <Badge tone={knowledge.location === 'built' ? 'ok' : 'warn'}>
-                {knowledge.location === 'built' ? 'built' : 'bundled sample'}
-              </Badge>
-            }
-          />
-          <div className="divide-y divide-line px-4 py-1">
-            {Object.entries(knowledge.counts).map(([split, count]) => (
-              <Row key={split} label={`${split} examples`}>
-                {count.toLocaleString()}
-              </Row>
-            ))}
-            {knowledge.techniques_covered != null && (
-              <Row label="Techniques covered">{knowledge.techniques_covered}</Row>
-            )}
-            <Row label="Approved rules used as references">{knowledge.approved_rules}</Row>
-            <Row label="Retrieval">{knowledge.retrieval}</Row>
-            <Row label="Sigma → SPL conversion">
-              <Ok ok={status.pysigma} yes="pySigma installed" no="pySigma missing" />
-            </Row>
-          </div>
-          {knowledge.location !== 'built' && (
-            <div className="space-y-1 px-4 pb-3 text-xs text-ink-muted">
-              <p>Build the full knowledge base from Splunk ESCU and SigmaHQ:</p>
-              <pre className="overflow-x-auto rounded-md bg-canvas px-2 py-1.5 font-mono text-[0.7rem] text-ink">
-                python scripts/download_sources.py{'\n'}python scripts/build_dataset.py --product windows
-              </pre>
-            </div>
-          )}
-        </Panel>
-
-        <Panel>
-          <PanelHeader
-            title="Evaluation"
-            description="Generation quality on techniques the retriever has never seen (scripts/evaluate.py)."
-            icon={<BookOpen className="size-4" />}
-          />
-          {evaluation ? (
-            <div className="space-y-3 p-4">
-              <div className="grid grid-cols-2 gap-4">
-                {PERCENT_KEYS.map(([metric, label]) => (
-                  <Stat
-                    key={metric}
-                    label={label}
-                    value={`${Math.round(Number(evaluation[metric] ?? 0) * 100)}%`}
-                  />
-                ))}
-              </div>
-              <p className="text-xs text-ink-faint">
-                {String(evaluation.examples)} examples · {String(evaluation.provider)}{' '}
-                {String(evaluation.model)} · average quality{' '}
-                {Math.round(Number(evaluation.avg_quality_score ?? 0))}/100 ·{' '}
-                {String(evaluation.evaluated_at ?? '')}
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-1 p-4 text-xs text-ink-muted">
-              <p>No evaluation has been run yet. It spends provider quota, so it is run on demand:</p>
-              <pre className="overflow-x-auto rounded-md bg-canvas px-2 py-1.5 font-mono text-[0.7rem] text-ink">
-                python scripts/evaluate.py --limit 10
-              </pre>
-            </div>
-          )}
         </Panel>
       </div>
 

@@ -11,7 +11,15 @@ import { fileStamp } from '@/lib/utils'
  * numbers visually subordinate, rather than laying out a row of identical
  * metric cards.
  */
-export function OverviewTab({ analysis }: { analysis: Analysis }) {
+export function OverviewTab({
+  analysis,
+  assistant,
+}: {
+  analysis: Analysis
+  /** The AI Detection Assistant, rendered inside the left column so the
+   *  space below the rule is used rather than left blank. */
+  assistant?: React.ReactNode
+}) {
   const { autonomous: auto, best } = analysis
   const validation = auto.validation
   const quality = auto.quality
@@ -114,6 +122,10 @@ export function OverviewTab({ analysis }: { analysis: Analysis }) {
           <SectionLabel>Analysed scenario</SectionLabel>
           <p className="text-xs leading-relaxed text-ink-muted">{analysis.description}</p>
         </Panel>
+
+        {/* The Assistant fills the space beneath the rule on this tab. Other
+            tabs keep it below the workspace. */}
+        {assistant}
       </div>
 
       {/* Secondary column: scores and context. */}

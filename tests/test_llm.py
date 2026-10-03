@@ -275,7 +275,14 @@ def test_transient_5xx_is_retried_once_then_succeeds():
     assert post.call_count == 2
 
 
-def test_retry_gives_up_after_the_configured_attempts():
+def test_retry_gives_up_after_the_configured_attempts(monkeypatch):
+    """Retries are bounded per model, then the next model is tried.
+
+    With failover the total is attempts x models, so this isolates a single
+    model to assert the per-model retry bound.
+    """
+    monkeypatch.setattr(llm, "LLM_FALLBACK_MODELS", [])
+
     with patch.object(llm.requests, "post", return_value=_response(503)) as post:
         result = llm.generate("explain_rule", "", {})
 
@@ -284,8 +291,14 @@ def test_retry_gives_up_after_the_configured_attempts():
 
 
 @pytest.mark.parametrize("status_code", [400, 401, 403, 429])
-def test_client_errors_are_never_retried(status_code):
-    """A 4xx will not change on a retry, so it must fail immediately."""
+def test_client_errors_are_never_retried_on_the_same_model(status_code, monkeypatch):
+    """A 4xx will not change on a retry of the same model.
+
+    429 may still fail over to a different model (quota is per model), so
+    failover is disabled here to assert the per-model retry behaviour.
+    """
+    monkeypatch.setattr(llm, "LLM_FALLBACK_MODELS", [])
+
     with patch.object(llm.requests, "post", return_value=_response(status_code)) as post:
         llm.generate("explain_rule", "", {})
     assert post.call_count == 1
@@ -296,3 +309,175 @@ def test_timeout_is_not_retried():
     with patch.object(llm.requests, "post", side_effect=requests.Timeout()) as post:
         llm.generate("explain_rule", "", {})
     assert post.call_count == 1
+
+
+# --- model failover on overload ------------------------------------------
+#
+# Provider load is per-model, so an overloaded primary usually succeeds on an
+# alternate. These pin that behaviour down.
+
+
+def test_overloaded_model_falls_back_to_the_next(monkeypatch):
+    """A 503 on the primary must transparently try the next model."""
+    monkeypatch.setattr(llm, "GEMINI_MODEL", "primary-model")
+    monkeypatch.setattr(llm, "LLM_FALLBACK_MODELS", ["primary-model", "backup-model"])
+    monkeypatch.setattr(llm, "LLM_MAX_ATTEMPTS", 1)
+
+    tried = []
+
+    def fake_post(url, **kwargs):
+        model = url.split("/models/")[1].split(":")[0]
+        tried.append(model)
+        mock = MagicMock()
+        if model == "primary-model":
+            mock.status_code = 503
+            mock.json.return_value = {}
+        else:
+            mock.status_code = 200
+            mock.json.return_value = _ok_payload()
+        return mock
+
+    with patch.object(llm.requests, "post", side_effect=fake_post):
+        result = llm.generate("explain_rule", "", {})
+
+    assert result.ok
+    assert tried == ["primary-model", "backup-model"]
+
+
+def test_result_reports_the_model_that_answered(monkeypatch):
+    """Provenance must name the fallback, not the configured primary."""
+    monkeypatch.setattr(llm, "GEMINI_MODEL", "primary-model")
+    monkeypatch.setattr(llm, "LLM_FALLBACK_MODELS", ["primary-model", "backup-model"])
+    monkeypatch.setattr(llm, "LLM_MAX_ATTEMPTS", 1)
+
+    def fake_post(url, **kwargs):
+        mock = MagicMock()
+        if "primary-model" in url:
+            mock.status_code = 503
+            mock.json.return_value = {}
+        else:
+            mock.status_code = 200
+            mock.json.return_value = _ok_payload()
+        return mock
+
+    with patch.object(llm.requests, "post", side_effect=fake_post):
+        result = llm.generate("explain_rule", "", {})
+
+    assert result.model == "backup-model"
+
+
+def test_client_error_does_not_trigger_failover(monkeypatch):
+    """A 4xx is the same on every model, so trying others just wastes quota."""
+    monkeypatch.setattr(llm, "GEMINI_MODEL", "primary-model")
+    monkeypatch.setattr(llm, "LLM_FALLBACK_MODELS", ["primary-model", "backup-model"])
+
+    tried = []
+
+    def fake_post(url, **kwargs):
+        tried.append(url.split("/models/")[1].split(":")[0])
+        mock = MagicMock()
+        mock.status_code = 401
+        mock.json.return_value = {}
+        return mock
+
+    with patch.object(llm.requests, "post", side_effect=fake_post):
+        result = llm.generate("explain_rule", "", {})
+
+    assert result.status is llm.LLMStatus.UNAUTHORIZED
+    assert tried == ["primary-model"]
+
+
+def test_all_models_overloaded_reports_provider_error(monkeypatch):
+    """When every model is down, fail honestly rather than fabricating output."""
+    monkeypatch.setattr(llm, "GEMINI_MODEL", "a")
+    monkeypatch.setattr(llm, "LLM_FALLBACK_MODELS", ["a", "b"])
+    monkeypatch.setattr(llm, "LLM_MAX_ATTEMPTS", 1)
+
+    mock = MagicMock()
+    mock.status_code = 503
+    mock.json.return_value = {}
+
+    with patch.object(llm.requests, "post", return_value=mock):
+        result = llm.generate("explain_rule", "", {})
+
+    assert result.status is llm.LLMStatus.PROVIDER_ERROR
+    assert result.text == ""
+
+
+def test_failover_disabled_when_no_fallbacks_configured(monkeypatch):
+    monkeypatch.setattr(llm, "GEMINI_MODEL", "only-model")
+    monkeypatch.setattr(llm, "LLM_FALLBACK_MODELS", [])
+    monkeypatch.setattr(llm, "LLM_MAX_ATTEMPTS", 1)
+
+    tried = []
+
+    def fake_post(url, **kwargs):
+        tried.append(url.split("/models/")[1].split(":")[0])
+        mock = MagicMock()
+        mock.status_code = 503
+        mock.json.return_value = {}
+        return mock
+
+    with patch.object(llm.requests, "post", side_effect=fake_post):
+        llm.generate("explain_rule", "", {})
+
+    assert tried == ["only-model"]
+
+
+def test_generation_token_budget_covers_model_thinking():
+    """Gemini thinking models spend part of the budget before any output.
+
+    Measured: 5,758 thinking tokens on a 6,000 budget left 238 for the answer,
+    truncating the JSON. The budget must leave room for both.
+    """
+    from api.settings import LLM_GENERATION_MAX_TOKENS
+
+    assert LLM_GENERATION_MAX_TOKENS >= 12000
+
+
+def test_quota_exhausted_model_falls_back(monkeypatch):
+    """Free-tier quota is tracked per model, so a 429 must fail over.
+
+    Retrying the same model is pointless — a quota does not clear in seconds —
+    but a sibling model often still has quota available.
+    """
+    monkeypatch.setattr(llm, "GEMINI_MODEL", "exhausted-model")
+    monkeypatch.setattr(llm, "LLM_FALLBACK_MODELS", ["exhausted-model", "fresh-model"])
+
+    tried = []
+
+    def fake_post(url, **kwargs):
+        model = url.split("/models/")[1].split(":")[0]
+        tried.append(model)
+        mock = MagicMock()
+        if model == "exhausted-model":
+            mock.status_code = 429
+            mock.json.return_value = {}
+        else:
+            mock.status_code = 200
+            mock.json.return_value = _ok_payload()
+        return mock
+
+    with patch.object(llm.requests, "post", side_effect=fake_post):
+        result = llm.generate("explain_rule", "", {})
+
+    assert result.ok
+    assert result.model == "fresh-model"
+    # The exhausted model is tried once, not retried.
+    assert tried == ["exhausted-model", "fresh-model"]
+
+
+def test_quota_exhausted_everywhere_reports_rate_limited(monkeypatch):
+    """When every model is out of quota, say so honestly."""
+    monkeypatch.setattr(llm, "GEMINI_MODEL", "a")
+    monkeypatch.setattr(llm, "LLM_FALLBACK_MODELS", ["a", "b"])
+
+    mock = MagicMock()
+    mock.status_code = 429
+    mock.json.return_value = {}
+
+    with patch.object(llm.requests, "post", return_value=mock):
+        result = llm.generate("explain_rule", "", {})
+
+    assert result.status is llm.LLMStatus.RATE_LIMITED
+    assert result.candidates if hasattr(result, "candidates") else result.text == ""

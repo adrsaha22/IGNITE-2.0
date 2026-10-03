@@ -575,6 +575,11 @@ def generate_candidates(scenario: str) -> GenerationResult:
             json_output=True,
         )
 
+        # Record the model that actually answered. Failover can switch models
+        # mid-request, so the configured name would misreport provenance.
+        if result.model:
+            base_provenance["model"] = result.model
+
         if not result.ok:
             if attempt == 0:
                 return GenerationResult(

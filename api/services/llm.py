@@ -42,6 +42,7 @@ from api.settings import (
     LLM_RETRY_DELAY,
     GEMINI_BASE_URL,
     GEMINI_MODEL,
+    LLM_FALLBACK_MODELS,
     LLM_CONNECT_TIMEOUT,
     LLM_MAX_INPUT_CHARS,
     LLM_MAX_OUTPUT_TOKENS,
@@ -468,7 +469,6 @@ def generate(
     if LLM_PROVIDER == "ollama":
         return _finish(_call_ollama(system, prompt, json_output), OLLAMA_MODEL)
 
-    url = f"{GEMINI_BASE_URL}/v1beta/models/{GEMINI_MODEL}:generateContent"
     body = {
         "systemInstruction": {"parts": [{"text": system}]},
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
@@ -484,38 +484,69 @@ def generate(
         "Content-Type": "application/json",
     }
 
-    # The provider returns transient 503s under load. One short retry recovers
-    # from those without making the user wait long when it is genuinely down.
-    # 4xx responses are never retried — they will not change.
+    # Provider load is per-model, so an overloaded primary often succeeds on an
+    # alternate immediately. Try the configured model first, then any fallbacks
+    # that differ from it, preserving the configured order.
+    models = [GEMINI_MODEL] + [m for m in LLM_FALLBACK_MODELS if m != GEMINI_MODEL]
+
+    # The provider returns transient 5xx under load. Retry briefly on each
+    # model, then move to the next. 4xx is never retried — it will not change.
     response = None
-    for attempt in range(LLM_MAX_ATTEMPTS):
-        try:
-            response = requests.post(
-                url,
-                headers=headers,
-                json=body,
-                timeout=(LLM_CONNECT_TIMEOUT, LLM_READ_TIMEOUT),
-            )
-        except requests.Timeout:
-            logger.info("Assistant request timed out")
-            return LLMResult(status=LLMStatus.TIMEOUT, message=STATUS_MESSAGE[LLMStatus.TIMEOUT])
-        except requests.RequestException as exc:
-            # Log the type only — the message can echo the request URL.
-            logger.info("Assistant request failed: %s", type(exc).__name__)
-            return LLMResult(
-                status=LLMStatus.UNREACHABLE, message=STATUS_MESSAGE[LLMStatus.UNREACHABLE]
-            )
+    used_model = GEMINI_MODEL
 
-        retryable = response.status_code in (500, 502, 503, 504)
-        if not retryable or attempt == LLM_MAX_ATTEMPTS - 1:
-            break
+    for model_index, model in enumerate(models):
+        used_model = model
+        url = f"{GEMINI_BASE_URL}/v1beta/models/{model}:generateContent"
 
-        logger.info(
-            "Provider returned HTTP %s; retrying (attempt %d of %d)",
-            response.status_code, attempt + 2, LLM_MAX_ATTEMPTS,
-        )
-        # Linear backoff: overload spikes usually clear within a few seconds.
-        time.sleep(LLM_RETRY_DELAY * (attempt + 1))
+        for attempt in range(LLM_MAX_ATTEMPTS):
+            try:
+                response = requests.post(
+                    url,
+                    headers=headers,
+                    json=body,
+                    timeout=(LLM_CONNECT_TIMEOUT, LLM_READ_TIMEOUT),
+                )
+            except requests.Timeout:
+                logger.info("Assistant request timed out on %s", model)
+                return LLMResult(
+                    status=LLMStatus.TIMEOUT, message=STATUS_MESSAGE[LLMStatus.TIMEOUT]
+                )
+            except requests.RequestException as exc:
+                # Log the type only — the message can echo the request URL.
+                logger.info("Assistant request failed: %s", type(exc).__name__)
+                return LLMResult(
+                    status=LLMStatus.UNREACHABLE, message=STATUS_MESSAGE[LLMStatus.UNREACHABLE]
+                )
+
+            retryable = response.status_code in (500, 502, 503, 504)
+            if not retryable or attempt == LLM_MAX_ATTEMPTS - 1:
+                break
+
+            logger.info(
+                "Provider returned HTTP %s on %s; retrying (attempt %d of %d)",
+                response.status_code, model, attempt + 2, LLM_MAX_ATTEMPTS,
+            )
+            # Linear backoff: overload spikes usually clear within a few seconds.
+            time.sleep(LLM_RETRY_DELAY * (attempt + 1))
+
+        # Try the next model when this one is unavailable.
+        #
+        # 429 is included because free-tier quota is tracked PER MODEL: an
+        # exhausted model sits beside others that still have quota, so failing
+        # over recovers where retrying the same model never would. It is not
+        # retried on the same model above (a quota does not clear in seconds),
+        # only failed over.
+        if (
+            response.status_code in (429, 500, 502, 503, 504)
+            and model_index < len(models) - 1
+        ):
+            logger.info(
+                "Model %s unavailable (HTTP %s); falling back to %s",
+                model, response.status_code, models[model_index + 1],
+            )
+            continue
+
+        break
 
     assert response is not None  # loop always assigns or returns
 
@@ -539,7 +570,7 @@ def generate(
         message = STATUS_MESSAGE[LLMStatus.PROVIDER_ERROR]
         if response.status_code == 503:
             message = (
-                f"The model '{GEMINI_MODEL}' is overloaded right now (the provider "
+                f"The model '{used_model}' is overloaded right now (the provider "
                 "reports high demand). Wait a minute and try again."
             )
         return LLMResult(status=LLMStatus.PROVIDER_ERROR, message=message)
@@ -560,7 +591,7 @@ def generate(
         status=LLMStatus.OK,
         text=text,
         sections=parse_sections(text),
-        model=GEMINI_MODEL,
+        model=used_model,
     )
 
 

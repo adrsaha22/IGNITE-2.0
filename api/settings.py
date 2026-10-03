@@ -70,13 +70,32 @@ GEMINI_BASE_URL = os.environ.get(
 LLM_MAX_OUTPUT_TOKENS = int(os.environ.get("IGNITE_LLM_MAX_OUTPUT_TOKENS", "1200"))
 LLM_MAX_INPUT_CHARS = int(os.environ.get("IGNITE_LLM_MAX_INPUT_CHARS", "12000"))
 LLM_CONNECT_TIMEOUT = float(os.environ.get("IGNITE_LLM_CONNECT_TIMEOUT", "5"))
-LLM_READ_TIMEOUT = float(os.environ.get("IGNITE_LLM_READ_TIMEOUT", "45"))
+# Structured rule generation with a thinking model measured at 42-45s, so a
+# 45s ceiling was cutting off responses that were about to succeed.
+LLM_READ_TIMEOUT = float(os.environ.get("IGNITE_LLM_READ_TIMEOUT", "120"))
 
 # Bounds how many candidates one generation request may return.
 LLM_MAX_CANDIDATES = int(os.environ.get("IGNITE_LLM_MAX_CANDIDATES", "3"))
 
 # Structured rule candidates need a larger budget than a prose answer.
-LLM_GENERATION_MAX_TOKENS = int(os.environ.get("IGNITE_LLM_GENERATION_MAX_TOKENS", "6000"))
+#
+# Gemini's thinking models spend part of this budget on internal reasoning
+# before emitting any output (reported as `thoughtsTokenCount`). Measured on
+# gemini-2.5-flash: 5,758 thinking tokens left only 238 for the answer, which
+# truncated the JSON mid-string. The budget must cover reasoning *and* output.
+LLM_GENERATION_MAX_TOKENS = int(os.environ.get("IGNITE_LLM_GENERATION_MAX_TOKENS", "16000"))
+
+# Models tried in order when the configured one is overloaded (HTTP 503).
+# Provider load is per-model, so failing over usually succeeds immediately.
+# Set IGNITE_LLM_FALLBACK_MODELS="" to disable and fail on the primary only.
+_FALLBACK_RAW = os.environ.get(
+    "IGNITE_LLM_FALLBACK_MODELS",
+    # Order reflects measured reliability on the structured generation prompt:
+    # flash-latest ~17s, 2.5-flash ~38s. gemini-3.5-flash is omitted because it
+    # exceeded 120s on the same prompt.
+    "gemini-flash-latest,gemini-2.5-flash,gemini-3.5-flash-lite",
+)
+LLM_FALLBACK_MODELS = [m.strip() for m in _FALLBACK_RAW.split(",") if m.strip()]
 
 # One short retry for transient provider 5xx errors. Deliberately small so a
 # genuinely unavailable provider fails fast instead of stalling the user.

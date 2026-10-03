@@ -173,13 +173,25 @@
     border-color: var(--c-line);
   }
 
+  /* The app shell owns scrolling: the sidebar stays fixed while <main>
+     scrolls. Pinning html/body to the viewport stops the document itself
+     from scrolling, which would otherwise drag the whole layout.
+
+     `overflow: hidden` on both axes matters: setting only overflow-x makes
+     the browser compute overflow-y as auto, leaving a phantom scrollable
+     document taller than the viewport. */
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+  }
+
   body {
     background-color: var(--c-canvas);
     color: var(--c-ink);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
-    overflow-x: hidden;
     transition:
       background-color var(--dur-base) var(--ease-out-soft),
       color var(--dur-base) var(--ease-out-soft);

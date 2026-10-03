@@ -370,12 +370,16 @@ const PLATFORM: PlatformStatus = {
 }
 
 describe('platform', () => {
-  it('describes the provider, Splunk and knowledge base without secrets', () => {
+  it('describes the provider and Splunk status without secrets', () => {
     wrap(<PlatformView status={PLATFORM} onSplunkChecked={() => {}} />)
     expect(screen.getByText('no — local model')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /test connection/i })).toBeDisabled()
-    expect(screen.getByText(/python scripts\/build_dataset.py/)).toBeInTheDocument()
-    expect(screen.getByText(/python scripts\/evaluate.py/)).toBeInTheDocument()
+  })
+
+  it('no longer exposes the knowledge base or evaluation internals', () => {
+    wrap(<PlatformView status={PLATFORM} onSplunkChecked={() => {}} />)
+    expect(screen.queryByText(/knowledge base/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/python scripts\//)).not.toBeInTheDocument()
   })
 })
 

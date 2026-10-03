@@ -12,7 +12,6 @@ import {
 } from 'lucide-react'
 import { Shell, type View } from './Shell'
 
-import { AIPanel } from '@/features/analysis/AIPanel'
 import { AttackInput } from '@/features/analysis/AttackInput'
 import { OverviewTab } from '@/features/analysis/OverviewTab'
 import { IntelTab } from '@/features/attack-intelligence/IntelTab'
@@ -25,7 +24,6 @@ import { LibraryPanel } from '@/features/library/LibraryPanel'
 import { useInvestigations } from '@/hooks/useInvestigations'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/primitives'
 import { isStale, useAnalysis } from '@/hooks/useAnalysis'
-import { useAIStatus } from '@/hooks/useAIStatus'
 import { useAIProviders } from '@/hooks/useAIProviders'
 import { AISwitcher } from '@/components/ui/ai-switcher'
 import { useHistory, type HistoryEntry } from '@/hooks/useHistory'
@@ -71,7 +69,6 @@ export function App() {
   const [platform, setPlatform] = useState<PlatformStatus | null>(null)
 
   const history = useHistory()
-  const ai = useAIStatus()
   const aiProviders = useAIProviders()
   const activeAI = aiProviders.data?.active
   const investigations = useInvestigations()
@@ -150,10 +147,18 @@ export function App() {
         transition: { duration: 0.28, ease: [0.22, 1, 0.36, 1] as const },
       }
 
+  // A single Assistant instance. Overview renders it inside its own grid;
+  // every other tab keeps it beneath the workspace.
+  const assistantPanel = (
+    <CopilotPanel
+      key={activeAI ?? 'none'}
+      analysis={analysis.analysis}
+      selectedIndex={selectedRule}
+    />
+  )
+
   return (
     <Shell
-      aiPhase={ai.phase}
-      aiDetail={ai.status?.detail}
       health={health}
       history={history.entries}
       onNewAnalysis={handleNewAnalysis}
@@ -231,7 +236,9 @@ export function App() {
 
                 <TabsContent value="overview">
                   <motion.div key={`overview-${activeId}`} {...panelMotion}>
-                    <OverviewTab analysis={analysis.analysis} />
+                    {/* On Overview the Assistant sits inside the layout, in
+                        the space beside the scores. */}
+                    <OverviewTab analysis={analysis.analysis} assistant={assistantPanel} />
                   </motion.div>
                 </TabsContent>
                 <TabsContent value="rules">
@@ -304,14 +311,10 @@ export function App() {
           )}
         </AnimatePresence>
 
-        {/* Remounts on an AI switch so its status reflects the new provider. */}
-        <CopilotPanel
-          key={activeAI ?? 'none'}
-          analysis={analysis.analysis}
-          selectedIndex={selectedRule}
-        />
-
-        <AIPanel description={input} phase={ai.phase} onRecheck={() => void ai.check(true)} />
+        {/* Overview renders the Assistant within its own layout, so it is
+            not repeated here. Remounts on an AI switch so its status
+            reflects the new provider. */}
+        {!(analysis.analysis && tab === 'overview') && assistantPanel}
       </div>
     </Shell>
   )

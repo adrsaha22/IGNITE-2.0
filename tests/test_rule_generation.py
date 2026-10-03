@@ -339,3 +339,32 @@ def test_api_key_never_appears_in_generation_output():
         }
     )
     assert "test-key-not-real" not in blob
+
+
+def test_provenance_reports_the_model_that_answered(monkeypatch):
+    """Failover can switch models mid-request.
+
+    Provenance must name the model that actually produced the candidates, not
+    the configured primary — otherwise the audit trail is wrong.
+    """
+    monkeypatch.setattr(llm, "GEMINI_MODEL", "exhausted-model")
+    monkeypatch.setattr(llm, "LLM_FALLBACK_MODELS", ["exhausted-model", "fresh-model"])
+
+    def fake_post(url, **kwargs):
+        model = url.split("/models/")[1].split(":")[0]
+        mock = MagicMock()
+        if model == "exhausted-model":
+            mock.status_code = 429
+            mock.json.return_value = {}
+        else:
+            mock.status_code = 200
+            mock.json.return_value = {
+                "candidates": [{"content": {"parts": [{"text": GOOD_RESPONSE}]}}]
+            }
+        return mock
+
+    with patch.object(llm.requests, "post", side_effect=fake_post):
+        result = rule_generator.generate_candidates("powershell attack")
+
+    assert result.ok
+    assert result.candidates[0].provenance["model"] == "fresh-model"

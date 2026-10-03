@@ -55,9 +55,6 @@ function mockApi(
     if (url.includes('/ai/providers')) {
       return new Response(JSON.stringify(AI_PROVIDERS), { status: 200 })
     }
-    if (url.includes('/ai/status')) {
-      return new Response(JSON.stringify(HEALTH.ai), { status: 200 })
-    }
     if (url.includes('/copilot/status')) {
       return new Response(JSON.stringify(COPILOT_STATUS), { status: 200 })
     }
@@ -66,16 +63,6 @@ function mockApi(
     }
     if (url.includes('/investigations')) {
       return new Response(JSON.stringify([]), { status: 200 })
-    }
-    if (url.includes('/ai/analyze')) {
-      return new Response(
-        JSON.stringify({
-          available: false,
-          text: null,
-          error: "AI analysis unavailable: HTTPConnectionPool(host='localhost', port=11434)",
-        }),
-        { status: 200 },
-      )
     }
     if (url.includes('/rules/generate')) {
       if (opts.analyzeFails) {
@@ -133,7 +120,7 @@ describe('initial render', () => {
     expect(screen.getByRole('button', { name: /generate detection rules/i })).toBeDisabled()
   })
 
-  it('shows the active AI and reports the summary model offline without blocking the app', async () => {
+  it('shows the active AI without blocking rule generation', async () => {
     mockApi()
     renderApp()
 
@@ -141,8 +128,6 @@ describe('initial render', () => {
     expect(
       await screen.findByRole('button', { name: /AI provider: Google Gemini/i }),
     ).toBeInTheDocument()
-    // The optional summary panel reports its local model as unreachable.
-    expect(await screen.findByRole('button', { name: /check connection/i })).toBeInTheDocument()
     // Rule generation remains available.
     expect(screen.getByRole('button', { name: /generate detection rules/i })).toBeInTheDocument()
   })
@@ -279,8 +264,6 @@ describe('empty and error states', () => {
       vi.fn(async (input: string | URL | Request) => {
         const url = String(input)
         if (url.includes('/health')) return new Response(JSON.stringify(HEALTH), { status: 200 })
-        if (url.includes('/ai/status'))
-          return new Response(JSON.stringify(HEALTH.ai), { status: 200 })
         if (url.includes('/copilot/status'))
           return new Response(JSON.stringify(COPILOT_STATUS), { status: 200 })
         if (url.includes('/testlab/samples'))
@@ -306,32 +289,6 @@ describe('empty and error states', () => {
     expect(await screen.findByText(/pipeline blew up/i)).toBeInTheDocument()
     // The earlier analysis is still on screen.
     expect(screen.getAllByRole('tab')).toHaveLength(TAB_COUNT)
-  })
-})
-
-describe('AI analysis', () => {
-  it('reports unavailability without breaking rule generation', async () => {
-    mockApi()
-    const user = userEvent.setup()
-    renderApp()
-    await generate(user)
-
-    await user.click(screen.getByRole('button', { name: /run ai analysis/i }))
-    expect(await screen.findByText(/ai analysis is unavailable/i)).toBeInTheDocument()
-    // Results remain intact.
-    expect(screen.getAllByRole('tab')).toHaveLength(TAB_COUNT)
-  })
-
-  it('keeps the raw error in a collapsible technical section', async () => {
-    mockApi()
-    const user = userEvent.setup()
-    renderApp()
-
-    await user.type(screen.getByLabelText(/attack scenario description/i), 'powershell')
-    await user.click(screen.getByRole('button', { name: /run ai analysis/i }))
-
-    expect(await screen.findByText(/technical details/i)).toBeInTheDocument()
-    expect(screen.getByText(/HTTPConnectionPool/)).toBeInTheDocument()
   })
 })
 

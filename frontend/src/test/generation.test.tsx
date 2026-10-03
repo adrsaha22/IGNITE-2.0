@@ -48,8 +48,6 @@ function mockApi(generateHandler: () => Response | Promise<Response>) {
       requested.push(url)
 
       if (url.includes('/health')) return new Response(JSON.stringify(HEALTH), { status: 200 })
-      if (url.includes('/ai/status'))
-        return new Response(JSON.stringify(HEALTH.ai), { status: 200 })
       if (url.includes('/copilot/status'))
         return new Response(JSON.stringify(COPILOT), { status: 200 })
       if (url.includes('/testlab/samples')) return new Response('[]', { status: 200 })

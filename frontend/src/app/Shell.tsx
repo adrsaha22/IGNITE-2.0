@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import {
   ChevronLeft,
@@ -7,7 +7,6 @@ import {
   Database,
   FilePlus2,
   Grid3x3,
-  Keyboard,
   Library,
   Menu,
   PanelLeft,
@@ -20,10 +19,10 @@ import {
   X,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Panel, Tooltip } from '@/components/ui/primitives'
+import { Tooltip } from '@/components/ui/primitives'
+import { BrandMark } from '@/components/ui/brand-mark'
 import { ThemeSwitcher } from '@/components/ui/theme-switcher'
 import { useReducedMotion } from '@/lib/motion'
-import type { AIPhase } from '@/hooks/useAIStatus'
 import type { HistoryEntry } from '@/hooks/useHistory'
 import type { Health } from '@/types/api'
 import { cn, formatTimestamp } from '@/lib/utils'
@@ -81,103 +80,6 @@ function NavList({
 }
 
 /** AI connection status. Reflects the real backend probe — never hardcoded. */
-function AIIndicator({ phase, detail }: { phase: AIPhase; detail?: string }) {
-  const map: Record<AIPhase, { dot: string; label: string }> = {
-    available: { dot: 'bg-ok', label: 'AI ready' },
-    unavailable: { dot: 'bg-bad', label: 'AI offline' },
-    checking: { dot: 'bg-warn', label: 'Checking' },
-    unknown: { dot: 'bg-ink-faint', label: 'AI unknown' },
-  }
-  const { dot, label } = map[phase]
-
-  return (
-    <Tooltip label={detail ? `${label} — ${detail}` : label}>
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-raised px-2.5 py-1 text-[0.7rem] text-ink-muted">
-        <span
-          className={cn('size-1.5 shrink-0 rounded-full', dot, phase === 'checking' && 'animate-pulse')}
-        />
-        {label}
-      </span>
-    </Tooltip>
-  )
-}
-
-/** Keyboard shortcut reference, shown in a dialog. */
-function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const reduced = useReducedMotion()
-
-  useEffect(() => {
-    if (!open) return
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose])
-
-  const shortcuts = [
-    { keys: ['Ctrl', 'Enter'], action: 'Generate detection rules' },
-    { keys: ['?'], action: 'Open this shortcut reference' },
-    { keys: ['Esc'], action: 'Close dialogs' },
-  ]
-
-  return (
-    <AnimatePresence>
-      {open && (
-        <motion.div
-          initial={reduced ? { opacity: 1 } : { opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={reduced ? { duration: 0 } : { duration: 0.18 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-canvas/70 p-4 backdrop-blur-sm"
-          onClick={onClose}
-          role="dialog"
-          aria-modal="true"
-          aria-label="Keyboard shortcuts"
-        >
-          <motion.div
-            initial={reduced ? false : { opacity: 0, scale: 0.97, y: 8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.98 }}
-            transition={reduced ? { duration: 0 } : { duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-            onClick={(event) => event.stopPropagation()}
-            className="w-full max-w-sm"
-          >
-            <Panel className="overflow-hidden">
-              <div className="flex items-center justify-between border-b border-line px-4 py-3">
-                <h2 className="text-sm font-semibold text-ink">Keyboard shortcuts</h2>
-                <Button variant="ghost" size="icon" onClick={onClose} aria-label="Close">
-                  <X />
-                </Button>
-              </div>
-              <ul className="divide-y divide-line">
-                {shortcuts.map((shortcut) => (
-                  <li
-                    key={shortcut.action}
-                    className="flex items-center justify-between gap-3 px-4 py-2.5"
-                  >
-                    <span className="text-xs text-ink-muted">{shortcut.action}</span>
-                    <span className="flex shrink-0 gap-1">
-                      {shortcut.keys.map((key) => (
-                        <kbd
-                          key={key}
-                          className="rounded border border-line-strong bg-raised px-1.5 py-0.5 font-mono text-[0.68rem] text-ink"
-                        >
-                          {key}
-                        </kbd>
-                      ))}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </Panel>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  )
-}
-
 /** Sidebar body, shared between the desktop rail and the mobile drawer. */
 function SidebarContent({
   collapsed,
@@ -372,8 +274,6 @@ function SidebarContent({
 
 export function Shell({
   children,
-  aiPhase,
-  aiDetail,
   health,
   history,
   onNewAnalysis,
@@ -386,8 +286,6 @@ export function Shell({
   aiControl,
 }: {
   children: React.ReactNode
-  aiPhase: AIPhase
-  aiDetail?: string
   health: Health | null
   history: HistoryEntry[]
   onNewAnalysis: () => void
@@ -403,25 +301,6 @@ export function Shell({
   const reduced = useReducedMotion()
   const [collapsed, setCollapsed] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const [shortcutsOpen, setShortcutsOpen] = useState(false)
-
-  // "?" opens the shortcut reference, unless the user is typing.
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null
-      const typing =
-        target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.isContentEditable)
-      if (!typing && event.key === '?') {
-        event.preventDefault()
-        setShortcutsOpen(true)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
 
   const sidebarProps = {
     health,
@@ -449,22 +328,22 @@ export function Shell({
     library: 'Review, validate, deploy and export governed rules',
     coverage: 'Where your detections are, and where the gaps are',
     activity: 'Append-only audit trail',
-    platform: 'Providers, Splunk, knowledge base and evaluation',
+    platform: 'AI provider, Splunk and governance',
   }
 
   return (
-    <div className="flex min-h-screen bg-canvas">
+    <div className="flex h-screen overflow-hidden bg-canvas">
       {/* Desktop rail — a subtle background shift and one hairline, not a
           heavy outlined panel. */}
       <motion.aside
         initial={false}
         animate={{ width: collapsed ? 68 : 256 }}
         transition={reduced ? { duration: 0 } : { duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
-        className="relative hidden shrink-0 flex-col border-r border-line bg-surface lg:flex"
+        className="relative hidden h-screen shrink-0 flex-col overflow-y-auto border-r border-line bg-surface lg:flex"
       >
         <div className="pointer-events-none absolute inset-0 bg-[image:var(--g-rail)]" aria-hidden />
         <div className="relative flex h-14 items-center gap-2.5 border-b border-line px-4">
-          <Shield className="size-5 shrink-0 text-primary-bright" aria-hidden />
+          <BrandMark className="size-5" />
           {!collapsed && (
             <span className="truncate text-sm font-bold tracking-[0.02em] text-ink">
               IGNITE<span className="text-gradient"> 2.0</span>
@@ -511,7 +390,8 @@ export function Shell({
               aria-label="Navigation"
             >
               <div className="flex h-14 items-center justify-between gap-2 border-b border-line px-4">
-                <span className="text-sm font-bold text-ink">
+                <span className="flex items-center gap-2.5 text-sm font-bold text-ink">
+                  <BrandMark className="size-5" />
                   IGNITE<span className="text-gradient"> 2.0</span>
                 </span>
                 <Button
@@ -530,8 +410,8 @@ export function Shell({
       </AnimatePresence>
 
       {/* Main column */}
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-3 border-b border-line bg-canvas/80 px-4 backdrop-blur-md sm:px-6">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="z-30 flex h-14 shrink-0 items-center justify-between gap-3 border-b border-line bg-canvas/80 px-4 backdrop-blur-md sm:px-6">
           <div className="flex min-w-0 items-center gap-2">
             <Button
               variant="ghost"
@@ -555,26 +435,14 @@ export function Shell({
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
-            {aiControl ?? <AIIndicator phase={aiPhase} detail={aiDetail} />}
-            <Tooltip label="Keyboard shortcuts">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="hidden sm:inline-flex"
-                onClick={() => setShortcutsOpen(true)}
-                aria-label="Keyboard shortcuts"
-              >
-                <Keyboard />
-              </Button>
-            </Tooltip>
+            {aiControl}
             <ThemeSwitcher />
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-[1500px] flex-1 px-4 py-6 sm:px-6">{children}</main>
+        <main className="relative mx-auto w-full max-w-[1500px] flex-1 overflow-y-auto px-4 py-6 sm:px-6">{children}</main>
       </div>
 
-      <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
     </div>
   )
 }
